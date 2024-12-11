@@ -1,0 +1,7 @@
+{
+    "BlockManager":{
+        "blocksInSegment":10,
+        "blockSize":1024,
+        "cacheSize":10
+    }
+}
