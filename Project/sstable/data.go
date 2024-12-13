@@ -1,11 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
+	"io"
 	"log"
 	"os"
+	"sort"
 )
 
 type DataRecord struct {
@@ -39,178 +41,172 @@ func NewDataRecord(key string, value []byte, tombstone bool, timestamp uint64) D
 	return record
 }
 
+func (ds *DataSegment) Print() {
+	for i, record := range ds.Records {
+		fmt.Println("Record ", i+1, " ", record)
+	}
+}
+
 func (ds *DataSegment) Add(record DataRecord) {
 	ds.Records = append(ds.Records, record)
 }
 
-func WriteSegmentsToFile(filename string, segments []DataSegment) (segmentKeys []string, segmentOffsets []uint64) {
-	file, err := os.Create(filename)
+func SortRecords(records []DataRecord) {
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Key < records[j].Key
+	})
+}
 
+func WriteSegmentsToFile(filename string, segments []DataSegment) ([]string, []uint64) {
+	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close()
 
-	writer := bufio.NewWriter(file)
+	keys := make([]string, 0)
+	offsets := make([]uint64, 0)
 	currentOffset := uint64(0)
-	// Za svaki segment belezim prvi kljuc i offset zbog kasnijeg formiranja indexa
-	segmentKeys = make([]string, 0)
-	segmentOffsets = make([]uint64, 0)
 
 	for _, segment := range segments {
-
-		if len(segment.Records) > 0 {
-			segmentKeys = append(segmentKeys, segment.Records[0].Key)
-			segmentOffsets = append(segmentOffsets, currentOffset)
-		}
-
-		for _, record := range segment.Records {
-
-			err := binary.Write(writer, binary.LittleEndian, record.CRC)
+		for j, record := range segment.Records {
+			if j == 0 {
+				keys = append(keys, record.Key)
+				offsets = append(offsets, currentOffset)
+			}
+			err = binary.Write(file, binary.LittleEndian, record.CRC)
 			if err != nil {
 				log.Fatal(err)
 			}
-			currentOffset += uint64(4)
+			currentOffset += 4
 
-			err = binary.Write(writer, binary.LittleEndian, record.Timestamp)
+			err = binary.Write(file, binary.LittleEndian, record.Timestamp)
 			if err != nil {
 				log.Fatal(err)
 			}
-			currentOffset += uint64(8)
-
-			tombstoneByte := byte(0)
+			currentOffset += 8
 			if record.Tombstone {
-				tombstoneByte = 1
+				err = binary.Write(file, binary.LittleEndian, byte(1))
+			} else {
+				err = binary.Write(file, binary.LittleEndian, byte(0))
 			}
-			err = binary.Write(writer, binary.LittleEndian, tombstoneByte)
 			if err != nil {
 				log.Fatal(err)
 			}
-			currentOffset += uint64(1)
+			currentOffset += 1
 
 			keyLen := uint32(len(record.Key))
-			err = binary.Write(writer, binary.LittleEndian, keyLen)
+			err = binary.Write(file, binary.LittleEndian, keyLen)
 			if err != nil {
 				log.Fatal(err)
 			}
-			currentOffset += uint64(4)
+			currentOffset += 4
 
-			_, err = writer.Write([]byte(record.Key))
+			_, err = file.Write([]byte(record.Key))
 			if err != nil {
 				log.Fatal(err)
 			}
 			currentOffset += uint64(len(record.Key))
 
-			// Piši Value dužinu i Value (ako Tombstone nije aktivan)
 			if !record.Tombstone {
-				err = binary.Write(writer, binary.LittleEndian, record.ValueSize)
+				err = binary.Write(file, binary.LittleEndian, record.ValueSize)
 				if err != nil {
 					log.Fatal(err)
 				}
-				currentOffset += uint64(4)
+				currentOffset += 4
 
-				_, err = writer.Write(record.Value)
+				_, err = file.Write(record.Value)
 				if err != nil {
 					log.Fatal(err)
 				}
-				currentOffset += uint64(record.ValueSize)
-
+				currentOffset += uint64(len(record.Value))
 			}
 		}
 	}
-	err = writer.Flush()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return segmentKeys, segmentOffsets
+	return keys, offsets
 }
 
-func FindDataRecord(key string, offset uint64, filename string) (bool, DataRecord) {
-	found := false
-	var record DataRecord
-
+func FindDataRecord(key string, segmentOffset uint64, filename string) (DataRecord, bool) {
 	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer file.Close()
 
-	// Seek to the starting offset of the segment
-	_, err = file.Seek(int64(offset), 0)
+	_, err = file.Seek(int64(segmentOffset), io.SeekStart)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	reader := bufio.NewReader(file)
-
-	// Loop through all records in the segment
 	for {
-		// Read CRC
-		err = binary.Read(reader, binary.LittleEndian, &record.CRC)
+		var record DataRecord
+
+		// Čitanje CRC
+		err = binary.Read(file, binary.LittleEndian, &record.CRC)
 		if err != nil {
-			// EOF or end of segment
-			if err.Error() == "EOF" {
+			if err == io.EOF {
 				break
 			}
 			log.Fatal(err)
 		}
+		segmentOffset += 4
 
-		// Read Timestamp
-		err = binary.Read(reader, binary.LittleEndian, &record.Timestamp)
+		// Čitanje Timestamp
+		err = binary.Read(file, binary.LittleEndian, &record.Timestamp)
 		if err != nil {
 			log.Fatal(err)
 		}
+		segmentOffset += 8
 
+		// Čitanje Tombstone
 		var tombstoneByte byte
-		err = binary.Read(reader, binary.LittleEndian, &tombstoneByte)
+		err = binary.Read(file, binary.LittleEndian, &tombstoneByte)
 		if err != nil {
 			log.Fatal(err)
 		}
 		record.Tombstone = tombstoneByte == 1
+		segmentOffset += 1
 
+		// Čitanje dužine ključa
 		var keyLen uint32
-		err = binary.Read(reader, binary.LittleEndian, &keyLen)
+		err = binary.Read(file, binary.LittleEndian, &keyLen)
 		if err != nil {
 			log.Fatal(err)
 		}
+		segmentOffset += 4
 
+		// Čitanje ključa
 		keyBytes := make([]byte, keyLen)
-		_, err = reader.Read(keyBytes)
+		_, err = file.Read(keyBytes)
 		if err != nil {
 			log.Fatal(err)
 		}
 		record.Key = string(keyBytes)
+		segmentOffset += uint64(keyLen)
 
-		if record.Key == key {
-			if !record.Tombstone {
-				err = binary.Read(reader, binary.LittleEndian, &record.ValueSize)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				record.Value = make([]byte, record.ValueSize)
-				_, err = reader.Read(record.Value)
-				if err != nil {
-					log.Fatal(err)
-				}
+		// Čitanje vrednosti ako nije tombstone
+		if !record.Tombstone {
+			err = binary.Read(file, binary.LittleEndian, &record.ValueSize)
+			if err != nil {
+				log.Fatal(err)
 			}
-			found = true
-			break
+			segmentOffset += 4
+
+			record.Value = make([]byte, record.ValueSize)
+			_, err = file.Read(record.Value)
+			if err != nil {
+				log.Fatal(err)
+			}
+			segmentOffset += uint64(record.ValueSize)
 		}
 
-		if !record.Tombstone {
-			var valueSize uint32
-			err = binary.Read(reader, binary.LittleEndian, &valueSize)
-			if err != nil {
-				log.Fatal(err)
-			}
-			_, err = reader.Discard(int(valueSize))
-			if err != nil {
-				log.Fatal(err)
-			}
+		// Provera ključa
+		if record.Key == key {
+			return record, true
+		}
+
+		if key < record.Key {
+			return DataRecord{}, false
 		}
 	}
-
-	return found, record
+	return DataRecord{}, false
 }

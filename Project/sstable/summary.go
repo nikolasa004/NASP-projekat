@@ -72,6 +72,9 @@ func (s *Summary) Find(key string) (bool, uint64) {
 }
 
 func (s *Summary) Print() {
+	fmt.Println("Summary:")
+	fmt.Println("Min: ", s.Min)
+	fmt.Println("Max: ", s.Max)
 	for i := range s.Keys {
 		fmt.Println("Key: ", s.Keys[i])
 

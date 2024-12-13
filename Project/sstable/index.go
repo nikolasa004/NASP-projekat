@@ -18,6 +18,19 @@ type Index struct {
 	Filename string
 }
 
+func NewIndex(filename string, keys []string, offsets []uint64) *Index {
+	index := Index{
+		Filename: filename,
+		Entries:  make([]KeyOffsetPair, 0),
+	}
+
+	for i, key := range keys {
+		index.Add(key, offsets[i])
+	}
+
+	return &index
+}
+
 func (i *Index) Add(key string, offset uint64) {
 	i.Entries = append(i.Entries, KeyOffsetPair{Key: key, Offset: offset})
 }
@@ -92,6 +105,9 @@ func (i *Index) FindIndex(key string, startOffset uint64) (found bool, offset ui
 		log.Fatal(err)
 	}
 
+	var closestOffset uint64
+	var closestKey string
+
 	for {
 		var keyLen uint32
 		err := binary.Read(file, binary.LittleEndian, &keyLen)
@@ -116,11 +132,25 @@ func (i *Index) FindIndex(key string, startOffset uint64) (found bool, offset ui
 			log.Fatal(err)
 		}
 
-		if key == currentKey {
+		if currentKey == key {
 			found = true
 			offset = offsetC
+			return found, offset
+		}
+
+		if currentKey < key {
+			closestKey = currentKey
+			closestOffset = offsetC
+		} else {
+			// If currentKey > key, stop searching as the index keys are sorted
 			break
 		}
+	}
+
+	// If no exact match, return the closest preceding key and its offset
+	if closestKey != "" {
+		found = false
+		offset = closestOffset
 	}
 	return found, offset
 }
