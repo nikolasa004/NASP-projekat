@@ -8,10 +8,9 @@ import (
 	"project/config"
 )
 
-
 func main() {
-	//bira se neka od metoda GET, PUT, DELETE
-	//od svake operacije se pravi zapis
+	// bira se neka od metoda GET, PUT, DELETE
+	// od svake operacije se pravi zapis
 
 	config, err := config.ReadConfig("config/config.json")
 
