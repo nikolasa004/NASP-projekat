@@ -3,6 +3,7 @@ package BlockManager
 //importovanje potrebnih paketa
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"strconv"
 )
@@ -23,7 +24,20 @@ func (blockManeger *BlockManager) GetBlockSize() int { //geter za velicinu bloka
 	return blockManeger.blockSize
 }
 
-func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) BlockManager { //konstruktor za BlockManager
+
+func (blockManager *BlockManager) GetSegments() []string {
+	return blockManager.segments
+}
+
+func (blockManager *BlockManager) GetCurrentSegment() int {
+	return blockManager.currentSegment
+}
+
+func (blockManager *BlockManager) GetCurrentBlock() int {
+	return blockManager.currentBlock
+}
+
+func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) *BlockManager { //konstruktor za BlockManager
 	bufferPool := NewBufferPool(poolSize)
 
 	files, err := os.ReadDir(walPath)
@@ -125,7 +139,7 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) 
 		}
 	}
 
-	return BlockManager{
+	return &BlockManager{
 		blockSize:        blockSize,
 		blocksPerSegment: blocksPerSegment,
 		bufferPool:       &bufferPool,
@@ -138,7 +152,7 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) 
 	}
 }
 
-func (blockManager *BlockManager) Reconstruct() { //funkcija koja podize sistem i rekonstruise stanje
+func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja podize sistem i rekonstruise stanje
 	endOfLastSegment := false
 	fullSegment := false
 
@@ -150,8 +164,11 @@ func (blockManager *BlockManager) Reconstruct() { //funkcija koja podize sistem 
 		for blockManager.currentBlock <= blockManager.blocksPerSegment {
 			key := segment + "-" + strconv.Itoa(blockManager.currentBlock)
 
-			if blockManager.currentBlock == 0 { //preskacemo heder
-				blockManager.currentBlock++
+			if blockManager.currentBlock == 0 {
+				block := blockManager.GetWalBlock(segment, blockManager.currentBlock)
+				firstBlock := int(binary.LittleEndian.Uint32(block[12:16]))
+				blockManager.currentBlock = firstBlock
+				fmt.Println("First block: ", firstBlock)
 				continue
 			}
 
@@ -241,6 +258,7 @@ func (blockManager *BlockManager) Reconstruct() { //funkcija koja podize sistem 
 		println(i, " - ", value)
 		i++
 	}
+	return fullRecords
 }
 
 func (blockManager *BlockManager) GetWalBlock(filename string, blockPosition int) []byte { //funkcija koja vraca zadati blok iz WAL-a

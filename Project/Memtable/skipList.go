@@ -10,12 +10,38 @@ type Node struct {
 	next []*Node
 }
 
-
 type SkipList struct {
 	maxHeight int
 	level int
 	headNode *Node
 	state string
+	linkedSegments []int
+}
+
+//clear skip list
+func (s *SkipList) Clear() {
+	headNext := make([]*Node, s.maxHeight)
+	s.headNode = &Node{key: "",value:nil, next: headNext}
+	s.level = 1
+	s.linkedSegments = make([]int, 0)
+}
+
+func (s *SkipList) GetLength() int {
+	length := 0
+	current := s.headNode
+	for current.next[0] != nil {
+		current = current.next[0]
+		length++
+	}
+	return length
+}
+
+func (s *SkipList) GetLinkedSegments() []int {
+	return s.linkedSegments
+}
+
+func (s *SkipList) SetLinkedSegments(segments []int) {
+	s.linkedSegments = segments
 }
 
 func (s *SkipList) SetState(state string) {

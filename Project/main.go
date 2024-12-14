@@ -24,7 +24,7 @@ func main() {
 	//Memtable
 	implementType := "SkipList"
 	numOfTables := 3
-	tableSize := 10
+	tableSize := 3
 
 	if err != nil {
 		fmt.Println("Greska pri citanju konfiguracionog fajla")
@@ -39,10 +39,14 @@ func main() {
 
 	walPath := "BlockManager/wal"
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, cacheSize, walPath)
-	blockManager.Reconstruct()
+	reconstructRecs := blockManager.Reconstruct()
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
 
+	for _, record := range reconstructRecs {
+		rec := memtable.CreateRecord(record.Tombstone, record.Key, record.Value)
+		memtable.PutRecord(rec, blockManager)
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
@@ -55,25 +59,23 @@ func main() {
 			scanner.Scan()
 			kljuc := scanner.Text()
 			record := memtable.GetRecord(kljuc)
-			if record == nil {
-				//proveriti u SStable-u kada se implementira
-			}
-			fmt.Println(record)
+			// if record == nil {
+			// 	//proveriti u SStable-u kada se implementira
+			// }
+			fmt.Println(string(record.Value))
 		} else if operacija == "PUT" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
 			kljuc := scanner.Text()
-
 			fmt.Println("Unesite vrednost: ")
 			scanner.Scan()
 			vrednost := scanner.Text()
-
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
 			record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
-			memtable.PutRecord(record)
+			memtable.PutRecord(record, blockManager)
 		} else if operacija == "DELETE" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -85,7 +87,7 @@ func main() {
 				blockManager.PutRecord(record)
 			}
 			record := memtable.CreateRecord(true,kljuc, []byte(""))
-			memtable.PutRecord(record)
+			memtable.PutRecord(record, blockManager)
 		} else if operacija == "/" {
 			break
 		} else {

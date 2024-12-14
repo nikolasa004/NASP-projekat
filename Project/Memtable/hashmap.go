@@ -7,6 +7,25 @@ import (
 type Hashmap struct {
 	records map[string]*MemtableRecord
 	state string
+	linkedSegments []int
+}
+
+func (m *Hashmap) Clear() {
+	m.records = make(map[string]*MemtableRecord)
+	m.linkedSegments = make([]int, 0)
+}
+
+
+func (m *Hashmap) GetLength() int {
+	return len(m.records)
+}
+
+func (m *Hashmap) GetLinkedSegments() []int {
+	return m.linkedSegments
+}
+
+func (m *Hashmap) SetLinkedSegments(segments []int) {
+	m.linkedSegments = segments
 }
 
 func (m *Hashmap) SetState(state string) {

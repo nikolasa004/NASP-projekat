@@ -60,9 +60,23 @@ func (n *TreeNode) insertChild(index int, child *TreeNode) {
 }
 
 type Tree struct {
-	m     int
-	root  *TreeNode
-	state string
+	m              int
+	root           *TreeNode
+	state          string
+	linkedSegments []int
+}
+
+func (t *Tree) GetLength() int {
+	length := 0
+	for range t.Iterator() {
+		length++
+	}
+	return length
+}
+
+func (t *Tree) Clear() {
+	valueArr := make([]*MemtableRecord, 0, t.m)
+	t.root = newNode(t.m, valueArr, nil)
 }
 
 func (t *Tree) SetState(state string) {
@@ -71,6 +85,14 @@ func (t *Tree) SetState(state string) {
 
 func (t *Tree) GetState() string {
 	return t.state
+}
+
+func (t *Tree) GetLinkedSegments() []int {
+	return t.linkedSegments
+}
+
+func (t *Tree) SetLinkedSegments(segments []int) {
+	t.linkedSegments = segments
 }
 
 func NewTree(m int) *Tree {
