@@ -55,6 +55,9 @@ func main() {
 			scanner.Scan()
 			kljuc := scanner.Text()
 			record := memtable.GetRecord(kljuc)
+			if record == nil {
+				//proveriti u SStable-u kada se implementira
+			}
 			fmt.Println(record)
 		} else if operacija == "PUT" {
 			fmt.Println("Unesite kljuc: ")

@@ -6,6 +6,8 @@ type Table interface {
 	FindRecord(key string) *MemtableRecord
 	AddRecord(record *MemtableRecord)
 	Iterator() <-chan *MemtableRecord
+	GetState() string
+	SetState(state string)
 }
 
 type Memtable struct {
@@ -13,6 +15,7 @@ type Memtable struct {
 	numOfTables   int
 	tableSize     int
 	tables        []Table
+	activeTable   int
 }
 
 func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable {
@@ -21,6 +24,7 @@ func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable
 		numOfTables:   numOfTables,
 		tableSize:     tableSize,
 		tables:        make([]Table, numOfTables),
+		activeTable:   0,
 	}
 
 	for i := 0; i < numOfTables; i++ {
@@ -33,11 +37,19 @@ func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable
 			memtable.tables[i] = NewTree(5)
 		}
 	}
-
+	memtable.tables[0].SetState("active")
 	return memtable
 }
 
 func (table *Memtable) GetRecord(kljuc string) *MemtableRecord {
+	for _,t := range table.tables {
+		if t.GetState() != "empty" {
+			record := t.FindRecord(kljuc)
+			if record != nil {
+				return record
+			}
+		}
+	}
 	return nil
 }
 

@@ -60,8 +60,17 @@ func (n *TreeNode) insertChild(index int, child *TreeNode) {
 }
 
 type Tree struct {
-	m    int
-	root *TreeNode
+	m     int
+	root  *TreeNode
+	state string
+}
+
+func (t *Tree) SetState(state string) {
+	t.state = state
+}
+
+func (t *Tree) GetState() string {
+	return t.state
 }
 
 func NewTree(m int) *Tree {

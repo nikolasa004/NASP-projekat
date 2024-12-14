@@ -6,10 +6,19 @@ import (
 
 type Hashmap struct {
 	records map[string]*MemtableRecord
+	state string
+}
+
+func (m *Hashmap) SetState(state string) {
+	m.state = state
+}
+
+func (m *Hashmap) GetState() string {
+	return m.state
 }
 
 func NewHashmap() *Hashmap {
-	return &Hashmap{records: make(map[string]*MemtableRecord)}
+	return &Hashmap{records: make(map[string]*MemtableRecord), state: "empty"}
 }
 
 func (m *Hashmap) FindRecord(key string) *MemtableRecord {

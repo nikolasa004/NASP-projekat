@@ -15,8 +15,16 @@ type SkipList struct {
 	maxHeight int
 	level int
 	headNode *Node
+	state string
 }
 
+func (s *SkipList) SetState(state string) {
+	s.state = state
+}
+
+func (s *SkipList) GetState() string {
+	return s.state
+}
 
 func NewSkipList(maxHeight int) *SkipList {
 	headNext := make([]*Node, maxHeight)
