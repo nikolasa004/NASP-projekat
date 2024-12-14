@@ -43,7 +43,7 @@ func (skipList *SkipList) FindRecord(k string) *MemtableRecord {
 
 
 
-func (skipList *SkipList) AddRecord(record *MemtableRecord) error {
+func (skipList *SkipList) AddRecord(record *MemtableRecord) {
 	key := record.Key
 	newLevel := skipList.roll()
 
@@ -61,7 +61,7 @@ func (skipList *SkipList) AddRecord(record *MemtableRecord) error {
 
 	if current.next[0] != nil && current.next[0].key == key {
 		current.next[0].value = record
-		return nil
+		return
 	}
 
 	newNode := &Node{key:key,value:record,next:make([]*Node, newLevel)}
@@ -70,8 +70,6 @@ func (skipList *SkipList) AddRecord(record *MemtableRecord) error {
 		newNode.next[i] = update[i].next[i]
 		update[i].next[i] = newNode
 	}
-
-	return nil
 }
 
 

@@ -13,6 +13,11 @@ type Config struct {
 		BlockSize       int `json:"blockSize"`
 		CacheSize       int `json:"cacheSize"`
 	} `json:"BlockManager"`
+	Memtable struct {
+		ImplementType string `json:"implementType"`
+		NumOfTables   int    `json:"numOfTables"`
+		TableSize     int    `json:"tableSize"`
+	} `json:"Memtable"`
 }
 
 func ReadConfig(filePath string) (Config, error) {

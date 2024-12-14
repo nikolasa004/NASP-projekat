@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"project/BlockManager"
+	"project/Memtable"
 	"project/config"
 )
+
 
 func main() {
 	// bira se neka od metoda GET, PUT, DELETE
@@ -14,9 +16,15 @@ func main() {
 
 	config, err := config.ReadConfig("config/config.json")
 
+	//WAL
 	blockSize := 1024
 	blocksPerSegment := 10
 	cacheSize := 10
+
+	//Memtable
+	implementType := "SkipList"
+	numOfTables := 3
+	tableSize := 10
 
 	if err != nil {
 		fmt.Println("Greska pri citanju konfiguracionog fajla")
@@ -24,11 +32,16 @@ func main() {
 		blockSize = config.BlockManager.BlockSize
 		blocksPerSegment = config.BlockManager.BlocksInSegment
 		cacheSize = config.BlockManager.CacheSize
+		implementType = config.Memtable.ImplementType
+		numOfTables = config.Memtable.NumOfTables
+		tableSize = config.Memtable.TableSize
 	}
 
 	walPath := "BlockManager/wal"
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, cacheSize, walPath)
 	blockManager.Reconstruct()
+
+	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -40,8 +53,9 @@ func main() {
 		if operacija == "GET" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
-			//kljuc := scanner.Text()
-			//za sad bez memtable-a i sstable-a ne moze da se vrati vrednost
+			kljuc := scanner.Text()
+			record := memtable.GetRecord(kljuc)
+			fmt.Println(record)
 		} else if operacija == "PUT" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -55,6 +69,8 @@ func main() {
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
+			record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
+			memtable.PutRecord(record)
 		} else if operacija == "DELETE" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -65,6 +81,8 @@ func main() {
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
+			record := memtable.CreateRecord(true,kljuc, []byte(""))
+			memtable.PutRecord(record)
 		} else if operacija == "/" {
 			break
 		} else {
