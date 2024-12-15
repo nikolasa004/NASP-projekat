@@ -60,10 +60,19 @@ func (n *TreeNode) insertChild(index int, child *TreeNode) {
 }
 
 type Tree struct {
-	m              int
-	root           *TreeNode
-	state          string
-	linkedSegments []int
+	m                 int
+	root              *TreeNode
+	state             string
+	linkedSegments    []int
+	lastBlockPosition int
+}
+
+func (t *Tree) GetLastBlockPosition() int {
+	return t.lastBlockPosition
+}
+
+func (t *Tree) SetLastBlockPosition(position int) {
+	t.lastBlockPosition = position
 }
 
 func (t *Tree) GetLength() int {
@@ -97,7 +106,7 @@ func (t *Tree) SetLinkedSegments(segments []int) {
 
 func NewTree(m int) *Tree {
 	valueArr := make([]*MemtableRecord, 0, m)
-	return &Tree{m: m, root: newNode(m, valueArr, nil)}
+	return &Tree{m: m, root: newNode(m, valueArr, nil), state: "empty", linkedSegments: make([]int, 0)}
 }
 
 func (t *Tree) AddRecord(newRecord *MemtableRecord) {

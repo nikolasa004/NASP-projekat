@@ -45,7 +45,7 @@ func main() {
 
 	for _, record := range reconstructRecs {
 		rec := memtable.CreateRecord(record.Tombstone, record.Key, record.Value)
-		memtable.PutRecord(rec, blockManager)
+		memtable.PutRecord(rec, blockManager, blockManager.GetRecordSegments()[record.Key])
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -53,7 +53,6 @@ func main() {
 		var operacija string
 		scanner.Scan()
 		operacija = scanner.Text()
-
 		if operacija == "GET" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -62,7 +61,11 @@ func main() {
 			// if record == nil {
 			// 	//proveriti u SStable-u kada se implementira
 			// }
-			fmt.Println(string(record.Value))
+			if record != nil {
+				fmt.Println(string(record.Value))
+			} else {
+				fmt.Println("Nema takvog kljuca")
+			}
 		} else if operacija == "PUT" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -75,7 +78,7 @@ func main() {
 				blockManager.PutRecord(record)
 			}
 			record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
-			memtable.PutRecord(record, blockManager)
+			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()})
 		} else if operacija == "DELETE" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -87,7 +90,7 @@ func main() {
 				blockManager.PutRecord(record)
 			}
 			record := memtable.CreateRecord(true,kljuc, []byte(""))
-			memtable.PutRecord(record, blockManager)
+			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()})
 		} else if operacija == "/" {
 			break
 		} else {

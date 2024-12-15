@@ -16,7 +16,17 @@ type SkipList struct {
 	headNode *Node
 	state string
 	linkedSegments []int
+	lastBlockPosition int
 }
+
+func (s *SkipList) GetLastBlockPosition() int {
+	return s.lastBlockPosition
+}
+
+func (s *SkipList) SetLastBlockPosition(position int) {
+	s.lastBlockPosition = position
+}
+
 
 //clear skip list
 func (s *SkipList) Clear() {
@@ -56,7 +66,7 @@ func NewSkipList(maxHeight int) *SkipList {
 	headNext := make([]*Node, maxHeight)
 	n := &Node{key: "",value:nil, next: headNext}
 
-	return &SkipList{maxHeight: maxHeight, level:1, headNode: n}
+	return &SkipList{maxHeight: maxHeight, level:1, headNode: n, state: "empty", linkedSegments: make([]int, 0)}
 }
 
 

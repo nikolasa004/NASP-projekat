@@ -10,15 +10,18 @@ import (
 	"project/BlockManager"
 )
 
+//interfejs za tabelu
 type Table interface {
 	FindRecord(key string) *MemtableRecord
 	AddRecord(record *MemtableRecord)
 	Iterator() <-chan *MemtableRecord
-	GetState() string
+	GetState() string // empty, active, full
 	SetState(state string)
-	GetLinkedSegments() []int
+	GetLinkedSegments() []int // lista segmenata koji su povezani sa tabelom
 	SetLinkedSegments(segments []int)
 	GetLength() int
+	GetLastBlockPosition() int // poslednji korisni blok u segmentu
+	SetLastBlockPosition(position int)
 	Clear()
 }
 
@@ -27,7 +30,7 @@ type Memtable struct {
 	numOfTables   int
 	tableSize     int
 	tables        []Table
-	activeTable   int
+	activeTable   int // indeks aktivne tabele
 }
 
 func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable {
@@ -68,22 +71,24 @@ func (table *Memtable) GetRecord(kljuc string) *MemtableRecord {
 	return nil
 }
 
-func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockManager.BlockManager) {
-	currSegment := blockManager.GetCurrentSegment()
+func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockManager.BlockManager, currSegments []int) {
 	currTable := &table.tables[table.activeTable]
 	currTableSegments := (*currTable).GetLinkedSegments()
+	for _, currSegment := range currSegments {
+		fmt.Println("Current segment: ", currSegment)
 
-	//check if currSegment is already contained in the table and if it's not add it
-	contains := false
-	for _,segment := range currTableSegments {
-		if segment == currSegment {
-			contains = true
-			break
+		//provera da li je segment vec povezan sa tabelom
+		contains := false
+		for _,segment := range currTableSegments {
+			if segment == currSegment {
+				contains = true
+				break
+			}
 		}
-	}
-	if !contains {
-		currTableSegments = append(currTableSegments, currSegment)
-		(*currTable).SetLinkedSegments(currTableSegments)
+		if !contains {
+			currTableSegments = append(currTableSegments, currSegment)
+			(*currTable).SetLinkedSegments(currTableSegments)
+		}
 	}
 
 	(*currTable).AddRecord(record)
@@ -91,6 +96,7 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 	if (*currTable).GetLength() >= table.tableSize {
 		(*currTable).SetState("full")
 		table.activeTable = (table.activeTable + 1) % table.numOfTables
+		(*currTable).SetLastBlockPosition(blockManager.GetCurrentBlock())
 		
 		currTable = &table.tables[table.activeTable]
 		if (*currTable).GetState() == "empty" {
@@ -109,17 +115,15 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 
 	//ovo je lista za Bjelicu za SStable
 	// listOfRecords := make([]*MemtableRecord, 0)
-	//prikazi koliko ima zapisa u tabeli
-	fmt.Println((*table).GetLength())
+	fmt.Println("FLUSHING TABLE")
 	for record := range (*table).Iterator() {
 		fmt.Println(record.Key + "-" + string(record.Value))
 		// listOfRecords = append(listOfRecords, record)
 	}
 
-	//moram da ispraznim moju tabelu
-	(*table).Clear()
+	(*table).Clear() //brisem sve iz tabele
 
-	//moram da promenim prvi korisni blok u mom segmentu
+	// menjam prvi korisni blok u segmentu
 	segment := blockManager.GetSegments()[0]
 
 	file, err := os.OpenFile(segment, os.O_WRONLY, 0644)
@@ -132,7 +136,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 
 	file.Seek(12, 0)
 	header := make([]byte, 4)
-	binary.LittleEndian.PutUint32(header, uint32(blockManager.GetCurrentBlock()))
+	binary.LittleEndian.PutUint32(header, uint32((*table).GetLastBlockPosition()))
 	_, err = file.Write(header)
 	if err != nil {
 		panic(err)

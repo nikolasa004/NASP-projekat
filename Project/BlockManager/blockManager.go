@@ -17,7 +17,7 @@ type BlockManager struct {
 	walPath          string        //putanja do wal foldera
 	segments         []string      //lista segmenata
 	orderOfSegments  map[int]int   //redosled segmenata, kljuc je redosled, vrednost je broj segmenta jer ne mora da bude od 0
-	memTableSegments map[int][]int //mapira koji segmenti su od kog memtable-a
+	recordSegments map[string][]int //mapira u kom segmentu je koji zapis
 }
 
 func (blockManeger *BlockManager) GetBlockSize() int { //geter za velicinu bloka
@@ -35,6 +35,11 @@ func (blockManager *BlockManager) GetCurrentSegment() int {
 
 func (blockManager *BlockManager) GetCurrentBlock() int {
 	return blockManager.currentBlock
+}
+
+
+func (blockManager *BlockManager) GetRecordSegments() map[string][]int {
+	return blockManager.recordSegments
 }
 
 func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) *BlockManager { //konstruktor za BlockManager
@@ -148,7 +153,7 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) 
 		walPath:          walPath,
 		segments:         segments,
 		orderOfSegments:  orderOfSegments,
-		memTableSegments: make(map[int][]int),
+		recordSegments: make(map[string][]int),
 	}
 }
 
@@ -159,12 +164,15 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja pod
 	fullRecords := []WalRecord{}
 	fragmentedParts := []WalRecord{}
 	currentFragmentedPosition := 1
+	recordSegments := make(map[string][]int) //mapira kljuc recorda na listu segmenata u kojima se nalazi
+	i := 0 //brojac segmenata
 	for _, segment := range blockManager.segments {
 		fullSegment = false
 		for blockManager.currentBlock <= blockManager.blocksPerSegment {
 			key := segment + "-" + strconv.Itoa(blockManager.currentBlock)
 
 			if blockManager.currentBlock == 0 {
+				//citamo prvi korisni blok iz headera segmenta
 				block := blockManager.GetWalBlock(segment, blockManager.currentBlock)
 				firstBlock := int(binary.LittleEndian.Uint32(block[12:16]))
 				blockManager.currentBlock = firstBlock
@@ -181,8 +189,24 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja pod
 				records := ReadAllRecords(block, int64(blockManager.blockSize))
 
 				for _, record := range records {
-					if record.Tombstone {
-						continue
+					segmentList, ok := recordSegments[record.Key]
+					//moguce je da je zapis fragmentovan i da se nalazi u vise delova, zato imamo listu segmenata
+					if !ok {
+						segmentList = []int{}
+						segmentList = append(segmentList, i)
+						recordSegments[record.Key] = segmentList
+					} else {
+						contains := false
+						for _, segment := range segmentList {
+							if segment == i {
+								contains = true
+								break
+							}
+						}
+						if !contains {
+							segmentList = append(segmentList, i)
+							recordSegments[record.Key] = segmentList
+						}
 					}
 
 					if record.Type == 0 {
@@ -229,6 +253,7 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja pod
 
 		blockManager.currentBlock = 0
 		blockManager.currentSegment++
+		i++
 	}
 
 	if fullSegment {
@@ -251,8 +276,8 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja pod
 
 		fullRecords = append(fullRecords, fullRecord)
 	}
-
-	i := 0
+	blockManager.recordSegments = recordSegments
+	i = 0
 	for _, record := range fullRecords {
 		value := string(record.Value)
 		println(i, " - ", value)

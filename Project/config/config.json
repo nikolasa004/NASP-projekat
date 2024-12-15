@@ -7,6 +7,6 @@
     "Memtable": {
         "implementType": "SkipList",
         "numOfTables": 3,
-        "tableSize": 10
+        "tableSize": 3
     }
 }
