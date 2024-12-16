@@ -37,11 +37,17 @@ func main() {
 	// Write records to a file
 	WriteSstable("sstable1", records, 5, false, true)
 
+	WriteSstable("sstable2", records, 5, false, false)
+
 	// print(sstable, sstable1)
 
-	record, found := FindInSstable("vanilla", "sstable1.bin", true)
+	record, found := FindInSstable("vanilla", "sstable1-TOC.txt")
+
+	record1, found1 := FindInSstable("vanilla", "sstable2-TOC.txt")
 
 	fmt.Println(record, found)
+
+	fmt.Println(record1, found1)
 
 	// Sort records by key
 

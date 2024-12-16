@@ -22,7 +22,7 @@ type Config struct {
 
 	SSTableManager struct {
 		SummarySampleRate int  `json:"summarySampleRate"`
-		MultipleFiles     bool `json:"multipleFiles"`
+		OneFile           bool `json:"multipleFiles"`
 		Compresion        bool `json:"compresion"`
 	} `json:"SSTableManager"`
 }

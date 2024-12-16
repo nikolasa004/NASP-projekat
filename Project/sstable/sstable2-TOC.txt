@@ -1,0 +1,5 @@
+0
+sstable2-data.bin
+sstable2-index.bin
+sstable2-summary.bin
+sstable2-filter.bin

@@ -1,12 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"os"
 )
+
+type TOC struct {
+	SingleFile bool
+	Files      []string
+}
 
 type Sstable struct {
 	Filename        string
@@ -40,6 +46,17 @@ func NewSstable(filename string, data []DataRecord, sampleRate int, compaction b
 
 	// Kreiranje fajlova
 	createFiles(filename, true)
+
+	// TOC fajl
+	toc := TOC{
+		Files: []string{sstable.DataFilename, sstable.IndexFilename, sstable.SummaryFilename, sstable.FilterFilename},
+	}
+
+	err := WriteTOCFile(filename, false, toc.Files)
+
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Ovo su potreni podaci za kreiranje svih potrebnih struktura
 	filter := NewBloomFilter(len(data), 0.01)
@@ -75,6 +92,16 @@ func NewSstableOneFile(filename string, data []DataRecord, sampleRate int, compa
 
 	// Kreiranje fajla
 	createFiles(filename, false)
+
+	toc := TOC{
+		SingleFile: true,
+		Files:      []string{sstable.Filename},
+	}
+
+	err := WriteTOCFile(filename, toc.SingleFile, toc.Files)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	info, _ := os.Stat(sstable.Filename)
 	print("File size: ", info.Size(), "\n")
@@ -121,7 +148,7 @@ func NewSstableOneFile(filename string, data []DataRecord, sampleRate int, compa
 	fmt.Println("Index offset: ", metadata.IndexOffset, " Index length: ", metadata.IndexLength)
 	fmt.Println("Summary offset: ", metadata.SummaryOffset, " Summary length: ", metadata.SummaryLength)
 
-	err := WriteMetadata(sstable.Filename, metadata)
+	err = WriteMetadata(sstable.Filename, metadata)
 
 	if err != nil {
 		log.Fatal(err)
@@ -308,8 +335,17 @@ func createFiles(filename string, multipleFiles bool) {
 	}
 }
 
-func FindInSstable(key string, filename string, oneFile bool) (DataRecord, bool) {
+func FindInSstable(key string, filename string) (DataRecord, bool) {
+	var toc TOC
+	var err error
+	toc, err = ReadTOCFile(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	oneFile := toc.SingleFile
+	files := toc.Files
 	if oneFile {
+		filename = files[0]
 		file, err := os.Open(filename)
 		if err != nil {
 			log.Fatal(err)
@@ -355,7 +391,107 @@ func FindInSstable(key string, filename string, oneFile bool) (DataRecord, bool)
 
 		return record, true
 
+	} else {
+		datafile := files[0]
+		indexfile := files[1]
+		summaryfile := files[2]
+		filterfile := files[3]
+
+		// Proveri da li je ključ u filteru
+		filter, err := Deserialize(0, 0, filterfile)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if !filter.Check(key) {
+			return DataRecord{}, false
+		}
+
+		// Proveri da li je ključ u summary-ju
+		summary := &Summary{}
+		summary.ReadSummary(0, summaryfile)
+		found, offsetS := summary.Find(key)
+
+		if !found {
+			return DataRecord{}, false
+		}
+
+		// Proveri da li je ključ u indexu
+		var index *Index
+		found, offset := index.FindIndex(key, offsetS, indexfile)
+		if !found {
+			return DataRecord{}, false
+		}
+
+		// Pročitaj podatke
+		record, found := FindDataRecord(key, offset, datafile)
+		if !found {
+			return DataRecord{}, false
+		}
+
+		return record, true
+	}
+}
+
+// Napravio sam TOC file kako bi lakse mogao da se pristupi svim fajlovima
+func WriteTOCFile(filename string, singleFile bool, files []string) error {
+	file, err := os.Create(filename + "-TOC.txt")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+
+	mode := "0"
+	if singleFile {
+		mode = "1"
 	}
 
-	return DataRecord{}, false
+	_, err = writer.WriteString(mode + "\n")
+	if err != nil {
+		return err
+	}
+
+	for _, f := range files {
+		_, err = writer.WriteString(f + "\n")
+		if err != nil {
+			return err
+		}
+	}
+
+	return writer.Flush()
+}
+
+func ReadTOCFile(filename string) (TOC, error) {
+	var toc TOC
+
+	file, err := os.Open(filename)
+	if err != nil {
+		return toc, err
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+
+	mode, err := reader.ReadString('\n')
+	if err != nil {
+		return toc, err
+	}
+
+	toc.SingleFile = mode[0] == '1'
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return toc, err
+		}
+
+		toc.Files = append(toc.Files, line[:len(line)-1])
+	}
+
+	return toc, nil
 }
