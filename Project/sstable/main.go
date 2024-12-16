@@ -1,4 +1,4 @@
-package main
+package sstable
 
 import "fmt"
 
@@ -35,9 +35,9 @@ func main() {
 	}
 
 	// Write records to a file
-	WriteSstable("sstable1", records, 5, false, true)
+	WriteSstable( records, 5, false, true)
 
-	WriteSstable("sstable2", records, 5, false, false)
+	WriteSstable(records, 5, false, false)
 
 	// print(sstable, sstable1)
 

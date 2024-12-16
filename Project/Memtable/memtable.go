@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"time"
-
 	"project/BlockManager"
+	"project/sstable"
+	"sort"
+	"time"
 )
 
-//interfejs za tabelu
+// interfejs za tabelu
 type Table interface {
 	FindRecord(key string) *MemtableRecord
 	AddRecord(record *MemtableRecord)
@@ -67,7 +68,7 @@ func (table *Memtable) GetRecord(kljuc string) *MemtableRecord {
 		}
 		currTable = (currTable - 1 + table.numOfTables) % table.numOfTables
 	}
-	
+
 	return nil
 }
 
@@ -79,7 +80,7 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 
 		//provera da li je segment vec povezan sa tabelom
 		contains := false
-		for _,segment := range currTableSegments {
+		for _, segment := range currTableSegments {
 			if segment == currSegment {
 				contains = true
 				break
@@ -97,29 +98,46 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 		(*currTable).SetState("full")
 		table.activeTable = (table.activeTable + 1) % table.numOfTables
 		(*currTable).SetLastBlockPosition(blockManager.GetCurrentBlock())
-		
+
 		currTable = &table.tables[table.activeTable]
 		if (*currTable).GetState() == "empty" {
 			(*currTable).SetState("active")
 			return
 		}
-		table.flushTable(currTable, blockManager)
+		records := table.flushTable(currTable, blockManager)
+		sstableRecords := make([]sstable.DataRecord, len(records))
+		//sada treba da se napravi sstable
+		for i, record := range records {
+			rec := ConvertFromMemtableRecord(record)
+			sstableRecords[i] = rec
+		}
+		sstable.WriteSstable(sstableRecords, 4, false, false)
 		(*currTable).SetState("active")
 	}
 }
 
-func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockManager) {
+func ConvertFromMemtableRecord(record *MemtableRecord) sstable.DataRecord {
+	rec := sstable.NewRecord(record.Key, record.Value, record.Tombstone, record.Timestamp)
+	return rec
+}
+
+func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockManager) []*MemtableRecord {
 	if len((*table).GetLinkedSegments()) > 1 {
 		blockManager.DeleteSegments(len((*table).GetLinkedSegments()) - 1)
 	}
 
 	//ovo je lista za Bjelicu za SStable
-	// listOfRecords := make([]*MemtableRecord, 0)
+	listOfRecords := make([]*MemtableRecord, 0)
 	fmt.Println("FLUSHING TABLE")
 	for record := range (*table).Iterator() {
 		fmt.Println(record.Key + "-" + string(record.Value))
-		// listOfRecords = append(listOfRecords, record)
+		listOfRecords = append(listOfRecords, record)
 	}
+
+	//sortiranje liste
+	sort.Slice(listOfRecords, func(i, j int) bool {
+		return listOfRecords[i].Key < listOfRecords[j].Key
+	})
 
 	(*table).Clear() //brisem sve iz tabele
 
@@ -127,7 +145,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 	segment := blockManager.GetSegments()[0]
 
 	file, err := os.OpenFile(segment, os.O_WRONLY, 0644)
-	
+
 	if err != nil {
 		panic(err)
 	}
@@ -141,9 +159,11 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 	if err != nil {
 		panic(err)
 	}
+
+	return listOfRecords
 }
 
-func (table *Memtable) CreateRecord(tombstone bool,kljuc string, vrednost []byte) *MemtableRecord {
+func (table *Memtable) CreateRecord(tombstone bool, kljuc string, vrednost []byte) *MemtableRecord {
 	timeStamp := uint64(time.Now().Unix())
-	return NewMemtableRecord(kljuc,vrednost,timeStamp,tombstone)
+	return NewMemtableRecord(kljuc, vrednost, timeStamp, tombstone)
 }

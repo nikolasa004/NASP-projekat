@@ -1,4 +1,4 @@
-package main
+package sstable
 
 import (
 	"crypto/md5"
@@ -101,8 +101,6 @@ func Deserialize(offset uint64, length uint64, filename string) (*BloomFilter, e
 	if err != nil {
 		return nil, err
 	}
-
-	
 
 	return &bf, nil
 }

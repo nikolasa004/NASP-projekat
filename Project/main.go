@@ -9,7 +9,6 @@ import (
 	"project/config"
 )
 
-
 func main() {
 	// bira se neka od metoda GET, PUT, DELETE
 	// od svake operacije se pravi zapis
@@ -26,6 +25,11 @@ func main() {
 	numOfTables := 3
 	tableSize := 3
 
+	//SSTable
+	// summarySampleRate := 10
+	// oneFile := false
+	// compression := false
+
 	if err != nil {
 		fmt.Println("Greska pri citanju konfiguracionog fajla")
 	} else {
@@ -35,6 +39,9 @@ func main() {
 		implementType = config.Memtable.ImplementType
 		numOfTables = config.Memtable.NumOfTables
 		tableSize = config.Memtable.TableSize
+		// summarySampleRate = config.SSTableManager.SummarySampleRate
+		// oneFile = config.SSTableManager.OneFile
+		// compression = config.SSTableManager.Compresion
 	}
 
 	walPath := "BlockManager/wal"
@@ -89,7 +96,7 @@ func main() {
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
-			record := memtable.CreateRecord(true,kljuc, []byte(""))
+			record := memtable.CreateRecord(true, kljuc, []byte(""))
 			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()})
 		} else if operacija == "/" {
 			break

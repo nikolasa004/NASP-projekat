@@ -1,4 +1,4 @@
-package main
+package sstable
 
 import (
 	"bufio"
@@ -34,25 +34,64 @@ type Metadata struct {
 	FilterLength  uint64
 }
 
-func NewSstable(filename string, data []DataRecord, sampleRate int, compaction bool) *Sstable {
+func NewRecord(key string, value []byte, tombstone bool, timestamp uint64) DataRecord {
+	record := DataRecord{
+		Key:       key,
+		Value:     value,
+		ValueSize: uint32(len(value)),
+		Tombstone: tombstone,
+		Timestamp: timestamp,
+	}
+
+	record.CRC = CRC32(value)
+	return record
+}
+
+func GenerateSstableFilenames(baseDir string, tableID int) map[string]string {
+	filenames := map[string]string{
+		"Data":       fmt.Sprintf("%s/sstable-%04d-Data.bin", baseDir, tableID),
+		"Filter":     fmt.Sprintf("%s/sstable-%04d-Filter.bin", baseDir, tableID),
+		"Index":      fmt.Sprintf("%s/sstable-%04d-Index.bin", baseDir, tableID),
+		"Summary":    fmt.Sprintf("%s/sstable-%04d-Summary.bin", baseDir, tableID),
+		"Statistics": fmt.Sprintf("%s/sstable-%04d-Statistics.bin", baseDir, tableID),
+		"TOC":        fmt.Sprintf("%s/sstable-%04d-TOC.txt", baseDir, tableID),
+	}
+
+	return filenames
+}
+
+func NewSstable(data []DataRecord, sampleRate int, compaction bool) *Sstable {
+
+	tableId, err := GetNextTableID()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tableDir := fmt.Sprintf("project/data/sstable/sstable-%04d", tableId)
+	err = os.MkdirAll(tableDir, os.ModePerm)
+	if err != nil {
+		log.Fatalf("Failed to create directory for SSTable: %v", err)
+	}
+
+	filenames := GenerateSstableFilenames("project/data/sstable", tableId)
 
 	sstable := &Sstable{
-		Filename:        filename,
-		DataFilename:    filename + "-data.bin",
-		IndexFilename:   filename + "-index.bin",
-		SummaryFilename: filename + "-summary.bin",
-		FilterFilename:  filename + "-filter.bin",
+		Filename:        filenames["TOC"],
+		DataFilename:    filenames["Data"],
+		IndexFilename:   filenames["Index"],
+		SummaryFilename: filenames["Summary"],
+		FilterFilename:  filenames["Filter"],
 	}
 
 	// Kreiranje fajlova
-	createFiles(filename, true)
+	createFiles(tableId, false)
 
 	// TOC fajl
 	toc := TOC{
 		Files: []string{sstable.DataFilename, sstable.IndexFilename, sstable.SummaryFilename, sstable.FilterFilename},
 	}
 
-	err := WriteTOCFile(filename, false, toc.Files)
+	err = WriteTOCFile("project/data/sstable"+filenames["TOC"], false, toc.Files)
 
 	if err != nil {
 		log.Fatal(err)
@@ -85,20 +124,34 @@ func NewSstable(filename string, data []DataRecord, sampleRate int, compaction b
 	return sstable
 }
 
-func NewSstableOneFile(filename string, data []DataRecord, sampleRate int, compaction bool) *Sstable {
+func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Sstable {
+
+	tableId, err := GetNextTableID()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tableDir := fmt.Sprintf("project/data/sstable/sstable-%04d", tableId)
+	err = os.MkdirAll(tableDir, os.ModePerm)
+	if err != nil {
+		log.Fatalf("Failed to create directory for SSTable: %v", err)
+	}
+
+	filename := fmt.Sprintf("project/data/sstable/sstable-%04d/sstable-%04d", tableId, tableId)
+
 	sstable := &Sstable{
 		Filename: filename + ".bin",
 	}
 
 	// Kreiranje fajla
-	createFiles(filename, false)
+	createFiles(tableId, false)
 
 	toc := TOC{
 		SingleFile: true,
 		Files:      []string{sstable.Filename},
 	}
 
-	err := WriteTOCFile(filename, toc.SingleFile, toc.Files)
+	err = WriteTOCFile(filename, toc.SingleFile, toc.Files)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -156,6 +209,7 @@ func NewSstableOneFile(filename string, data []DataRecord, sampleRate int, compa
 
 	return sstable
 }
+
 func WriteMetadata(filename string, metadata Metadata) error {
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
@@ -289,50 +343,50 @@ func ReadMetadata(filename string) (Metadata, error) {
 	return metadata, nil
 }
 
-func WriteSstable(filename string, data []DataRecord, sampleRate int, compaction bool, oneFile bool) *Sstable {
+func WriteSstable(data []DataRecord, sampleRate int, compaction bool, oneFile bool) *Sstable {
 	if oneFile {
-		return NewSstableOneFile(filename, data, sampleRate, compaction)
+		return NewSstableOneFile(data, sampleRate, compaction)
 	}
-	return NewSstable(filename, data, sampleRate, compaction)
+	return NewSstable(data, sampleRate, compaction)
 }
 
-func createFiles(filename string, multipleFiles bool) {
-	if multipleFiles {
-		dataFilename := filename + "-data.bin"
-		indexFilename := filename + "-index.bin"
-		summaryFilename := filename + "-summary.bin"
-		filterFilename := filename + "-filter.bin"
+func createFiles(tableID int, oneFile bool) (string, error) {
+	// Kreiraj folder za novi SSTable
+	tableDir := fmt.Sprintf("project/data/sstable/sstable-%04d", tableID)
 
-		dataFile, err := os.Create(dataFilename)
-		if err != nil {
-			log.Fatal(err)
-		}
-		dataFile.Close()
+	err := os.MkdirAll(tableDir, os.ModePerm) // Kreiraj folder ako ne postoji
+	if err != nil {
+		return "", fmt.Errorf("failed to create folder for SSTable: %v", err)
+	}
 
-		indexFile, err := os.Create(indexFilename)
-		if err != nil {
-			log.Fatal(err)
+	// Generiši fajlove unutar foldera
+	if !oneFile {
+		fileNames := []string{
+			"data.bin",
+			"index.bin",
+			"summary.bin",
+			"filter.bin",
 		}
-		indexFile.Close()
 
-		summaryFile, err := os.Create(summaryFilename)
-		if err != nil {
-			log.Fatal(err)
+		for _, name := range fileNames {
+			filePath := fmt.Sprintf("%s/%s", tableDir, name)
+			file, err := os.Create(filePath)
+			if err != nil {
+				return "", fmt.Errorf("failed to create file %s: %v", filePath, err)
+			}
+			file.Close()
 		}
-		summaryFile.Close()
-
-		filterFile, err := os.Create(filterFilename)
-		if err != nil {
-			log.Fatal(err)
-		}
-		filterFile.Close()
 	} else {
-		file, err := os.Create(filename + ".bin")
+		// Kreiraj jedan fajl ako je single file mod
+		filePath := fmt.Sprintf("%s/sstable-%04d.bin", tableDir, tableID)
+		file, err := os.Create(filePath)
 		if err != nil {
-			log.Fatal(err)
+			return "", fmt.Errorf("failed to create single file: %v", err)
 		}
 		file.Close()
 	}
+
+	return tableDir, nil
 }
 
 func FindInSstable(key string, filename string) (DataRecord, bool) {
@@ -435,7 +489,7 @@ func FindInSstable(key string, filename string) (DataRecord, bool) {
 
 // Napravio sam TOC file kako bi lakse mogao da se pristupi svim fajlovima
 func WriteTOCFile(filename string, singleFile bool, files []string) error {
-	file, err := os.Create(filename + "-TOC.txt")
+	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}

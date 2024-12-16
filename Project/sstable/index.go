@@ -1,4 +1,4 @@
-package main
+package sstable
 
 import (
 	"encoding/binary"
