@@ -3,5 +3,10 @@
         "blocksInSegment":10,
         "blockSize":1024,
         "cacheSize":10
+    },
+    "Memtable": {
+        "implementType": "SkipList",
+        "numOfTables": 3,
+        "tableSize": 3
     }
 }
