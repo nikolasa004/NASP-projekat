@@ -82,13 +82,17 @@ func (bf *BloomFilter) Serialize(filename string) (uint64, error) {
 	return offset, nil
 }
 
-func Deserialize(filename string) (*BloomFilter, error) {
+func Deserialize(offset uint64, length uint64, filename string) (*BloomFilter, error) {
 	file, err := os.Open(filename)
-
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+
+	_, err = file.Seek(int64(offset), 0)
+	if err != nil {
+		return nil, err
+	}
 
 	var bf BloomFilter
 	decoder := gob.NewDecoder(file)
@@ -97,6 +101,8 @@ func Deserialize(filename string) (*BloomFilter, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	
 
 	return &bf, nil
 }

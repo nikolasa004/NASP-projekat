@@ -88,12 +88,11 @@ func (s *Summary) Write(multipleFiles bool, offset uint64) uint64 {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer file.Close()
 
-	if !multipleFiles {
-		_, err = file.Seek(int64(offset), 0)
-		if err != nil {
-			log.Fatal(err)
-		}
+	_, err = file.Seek(int64(offset), 0)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	minLen := uint64(len(s.Min))
@@ -146,12 +145,17 @@ func (s *Summary) Write(multipleFiles bool, offset uint64) uint64 {
 	return currentOffset
 }
 
-func (s *Summary) Read() error {
-	file, err := os.Open(s.Filename)
+func (s *Summary) ReadSummary(offset uint64, filename string) error {
+	file, err := os.Open(filename)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+
+	_, err = file.Seek(int64(offset), 0)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	var minLen uint64
 	err = binary.Read(file, binary.LittleEndian, &minLen)
@@ -161,6 +165,7 @@ func (s *Summary) Read() error {
 
 	minBytes := make([]byte, minLen)
 	_, err = file.Read(minBytes)
+	fmt.Println("Min: ", string(minBytes))
 	if err != nil {
 		return err
 	}

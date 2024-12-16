@@ -97,11 +97,11 @@ func (i *Index) Write(multipleFiles bool, offset uint64) (keys []string, offsets
 	return keys, offsets, currentOffset
 }
 
-func (i *Index) FindIndex(key string, startOffset uint64) (found bool, offset uint64) {
+func (i *Index) FindIndex(key string, startOffset uint64, filename string) (found bool, offset uint64) {
 	found = false
 	offset = 0
 
-	file, err := os.Open(i.Filename)
+	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -132,6 +132,7 @@ func (i *Index) FindIndex(key string, startOffset uint64) (found bool, offset ui
 		}
 
 		currentKey := string(keyB)
+		fmt.Println("Current key: ", currentKey)
 
 		var offsetC uint64
 		err = binary.Read(file, binary.LittleEndian, &offsetC)
@@ -156,7 +157,7 @@ func (i *Index) FindIndex(key string, startOffset uint64) (found bool, offset ui
 
 	// If no exact match, return the closest preceding key and its offset
 	if closestKey != "" {
-		found = false
+		found = true
 		offset = closestOffset
 	}
 	return found, offset

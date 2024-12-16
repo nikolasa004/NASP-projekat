@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 func main() {
 	records := []DataRecord{
 		NewDataRecord("apple", []byte("value1"), false, 1),
@@ -32,11 +34,15 @@ func main() {
 		NewDataRecord("dragonfruit", []byte("value28"), false, 28),
 	}
 
-	sstable := NewSstable("sstable", records, 6, false)
+	// Write records to a file
+	WriteSstable("sstable1", records, 5, false, true)
 
-	sstable1 := NewSstableOneFile("sstable1", records, 6, false)
+	// print(sstable, sstable1)
 
-	print(sstable, sstable1)
+	record, found := FindInSstable("vanilla", "sstable1.bin", true)
+
+	fmt.Println(record, found)
+
 	// Sort records by key
 
 	SortRecords(records)
@@ -48,7 +54,7 @@ func main() {
 	// 	for i, record := range records {
 	// 		currentSegment.Add(record)
 
-	// 		// When the current segment has 5 records, finalize and start a new segment
+	// 		// When the current segment has 5 records, finalize and start a new Println()
 	// 		if (i+1)%5 == 0 || i == len(records)-1 {
 	// 			segments = append(segments, currentSegment)
 	// 			currentSegment.Print()
