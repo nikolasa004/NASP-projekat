@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/binary"
+	"encoding/gob"
 	"log"
 	"os"
 )
@@ -31,7 +33,7 @@ func NewSstable(filename string, data []DataRecord, sampleRate int, compaction b
 		DataFilename:    filename + "-data.bin",
 		IndexFilename:   filename + "-index.bin",
 		SummaryFilename: filename + "-summary.bin",
-		FilterFilename:  filename + "-filter.gob",
+		FilterFilename:  filename + "-filter.bin",
 	}
 
 	// Kreiranje fajlova
@@ -63,17 +65,12 @@ func NewSstable(filename string, data []DataRecord, sampleRate int, compaction b
 
 	return sstable
 }
-
 func NewSstableOneFile(filename string, data []DataRecord, sampleRate int, compaction bool) *Sstable {
 	sstable := &Sstable{
-		Filename:        filename + ".bin",
-		DataFilename:    filename + ".bin",
-		IndexFilename:   filename + ".bin",
-		SummaryFilename: filename + ".bin",
-		FilterFilename:  filename + ".bin",
+		Filename: filename + ".bin",
 	}
 
-	// Kreiranje fajlova
+	// Kreiranje fajla
 	createFiles(filename, false)
 
 	var metadata Metadata
@@ -84,29 +81,46 @@ func NewSstableOneFile(filename string, data []DataRecord, sampleRate int, compa
 		filter.Add(record.Key)
 	}
 	metadata.FilterOffset = currentOffset
-
-	_, metadata.FilterLength = filter.Serialize(sstable.FilterFilename)
+	metadata.FilterLength, _ = filter.Serialize(sstable.Filename)
 	currentOffset += metadata.FilterLength
 
 	metadata.DataOffset = currentOffset
 	segments := makeSegments(data, 5)
-	keys, offsets, fileLen := WriteSegmentsToFile(sstable.DataFilename, segments, false, currentOffset)
-	metadata.DataLength = currentOffset + fileLen
-	currentOffset += fileLen
+	keys, offsets, dataLength := WriteSegmentsToFile(sstable.Filename, segments, false, currentOffset)
+	metadata.DataLength = dataLength
+	currentOffset += dataLength
 
 	metadata.IndexOffset = currentOffset
-	index := NewIndex(sstable.IndexFilename, keys, offsets)
+	index := NewIndex("", keys, offsets)
 	index.Sort()
-	index.Print()
-	summaryKeys, summaryOffsets, fileLen := index.Write(false, currentOffset)
-	metadata.IndexLength = fileLen + currentOffset
-	currentOffset += fileLen
+	summaryKeys, summaryOffsets, indexLength := index.Write(false, currentOffset)
+	metadata.IndexLength = indexLength
+	currentOffset += indexLength
 
 	metadata.SummaryOffset = currentOffset
-	summary := NewSummary(summaryKeys, summaryOffsets, sstable.SummaryFilename, sampleRate)
-	summary.Print()
-	fileLen = summary.Write(false, currentOffset)
-	metadata.SummaryLength = currentOffset + fileLen
+	summary := NewSummary(summaryKeys, summaryOffsets, "", sampleRate)
+	summaryLength := summary.Write(false, currentOffset)
+	metadata.SummaryLength = summaryLength
+	currentOffset += summaryLength
+
+	file, err := os.OpenFile(sstable.Filename, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	// Serijalizacija metapodataka
+	encoder := gob.NewEncoder(file)
+	err = encoder.Encode(metadata)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Zapis veličine metapodataka na kraj fajla
+	err = binary.Write(file, binary.LittleEndian, uint64(binary.Size(metadata)))
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	return sstable
 }
@@ -116,7 +130,7 @@ func createFiles(filename string, multipleFiles bool) {
 		dataFilename := filename + "-data.bin"
 		indexFilename := filename + "-index.bin"
 		summaryFilename := filename + "-summary.bin"
-		filterFilename := filename + "-filter.gob"
+		filterFilename := filename + "-filter.bin"
 
 		dataFile, err := os.Create(dataFilename)
 		if err != nil {
