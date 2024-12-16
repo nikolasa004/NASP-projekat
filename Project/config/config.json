@@ -8,5 +8,10 @@
         "implementType": "SkipList",
         "numOfTables": 3,
         "tableSize": 3
+    },
+    "SsTableManager":{
+     "summarySampleRate":10,
+     "multipleFiles":true,
+     "compresion":false   
     }
 }

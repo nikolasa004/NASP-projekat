@@ -62,22 +62,24 @@ func (bf *BloomFilter) Check(item string) bool {
 	return true
 }
 
-func (bf *BloomFilter) Serialize(filename string) error {
-	file, err := os.Create(filename)
+func (bf *BloomFilter) Serialize(filename string) (error, uint64) {
+	var offset uint64
+	file, err := os.Open(filename)
 
 	if err != nil {
-		return err
+		return err, offset
 	}
 	defer file.Close()
 
 	encoder := gob.NewEncoder(file)
 	err = encoder.Encode(bf)
+	offset += uint64(len(bf.BitSet))
 
 	if err != nil {
-		return err
+		return err, offset
 	}
 
-	return nil
+	return nil, offset
 }
 
 func Deserialize(filename string) (*BloomFilter, error) {

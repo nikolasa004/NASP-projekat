@@ -57,10 +57,17 @@ func SortRecords(records []DataRecord) {
 	})
 }
 
-func WriteSegmentsToFile(filename string, segments []DataSegment) ([]string, []uint64) {
-	file, err := os.Create(filename)
+func WriteSegmentsToFile(filename string, segments []DataSegment, multiplefiles bool, offset uint64) ([]string, []uint64, uint64) {
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if !multiplefiles {
+		_, err = file.Seek(int64(offset), io.SeekStart)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	keys := make([]string, 0)
@@ -122,7 +129,7 @@ func WriteSegmentsToFile(filename string, segments []DataSegment) ([]string, []u
 			}
 		}
 	}
-	return keys, offsets
+	return keys, offsets, currentOffset
 }
 
 func FindDataRecord(key string, segmentOffset uint64, filename string) (DataRecord, bool) {
@@ -209,4 +216,18 @@ func FindDataRecord(key string, segmentOffset uint64, filename string) (DataReco
 		}
 	}
 	return DataRecord{}, false
+}
+
+func makeSegments(dataRecords []DataRecord, segmentSize int) []DataSegment {
+	SortRecords(dataRecords)
+	segments := make([]DataSegment, 0)
+	var currentSegment DataSegment
+	for i, record := range dataRecords {
+		currentSegment.Add(record)
+		if (i+1)%segmentSize == 0 || i == len(dataRecords)-1 {
+			segments = append(segments, currentSegment)
+			currentSegment = DataSegment{}
+		}
+	}
+	return segments
 }

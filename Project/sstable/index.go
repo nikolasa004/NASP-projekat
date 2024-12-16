@@ -47,16 +47,23 @@ func (i *Index) Print() {
 	}
 }
 
-func (i *Index) Write() (keys []string, offsets []uint64) {
+func (i *Index) Write(multipleFiles bool, offset uint64) (keys []string, offsets []uint64, fileLen uint64) {
 	currentOffset := uint64(0)
 
 	offsets = make([]uint64, 0)
 
-	file, err := os.Create(i.Filename)
+	file, err := os.OpenFile(i.Filename, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer file.Close()
+
+	if !multipleFiles {
+		_, err = file.Seek(int64(offset), 0)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	for _, entry := range i.Entries {
 		offsets = append(offsets, currentOffset)
@@ -87,7 +94,7 @@ func (i *Index) Write() (keys []string, offsets []uint64) {
 
 	fmt.Println(offsets)
 
-	return keys, offsets
+	return keys, offsets, currentOffset
 }
 
 func (i *Index) FindIndex(key string, startOffset uint64) (found bool, offset uint64) {

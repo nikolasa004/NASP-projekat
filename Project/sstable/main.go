@@ -1,9 +1,5 @@
 package main
 
-import (
-	"fmt"
-)
-
 func main() {
 	records := []DataRecord{
 		NewDataRecord("apple", []byte("value1"), false, 1),
@@ -36,65 +32,70 @@ func main() {
 		NewDataRecord("dragonfruit", []byte("value28"), false, 28),
 	}
 
+	sstable := NewSstable("sstable", records, 6, false)
+
+	sstable1 := NewSstableOneFile("sstable1", records, 6, false)
+
+	print(sstable, sstable1)
 	// Sort records by key
 
 	SortRecords(records)
 
 	// Create segmentssegments := make([]DataSegment, 0)
-	segments := make([]DataSegment, 0)
-	var currentSegment DataSegment
+	// segments := make([]DataSegment, 0)
+	// var currentSegment DataSegment
 
-	for i, record := range records {
-		currentSegment.Add(record)
+	// 	for i, record := range records {
+	// 		currentSegment.Add(record)
 
-		// When the current segment has 5 records, finalize and start a new segment
-		if (i+1)%5 == 0 || i == len(records)-1 {
-			segments = append(segments, currentSegment)
-			currentSegment.Print()
-			currentSegment = DataSegment{}
-		}
-	}
+	// 		// When the current segment has 5 records, finalize and start a new segment
+	// 		if (i+1)%5 == 0 || i == len(records)-1 {
+	// 			segments = append(segments, currentSegment)
+	// 			currentSegment.Print()
+	// 			currentSegment = DataSegment{}
+	// 		}
+	// 	}
 
-	// Write segments to a file
-	dataFilename := "data.db"
-	keys, offsets := WriteSegmentsToFile(dataFilename, segments)
+	// 	// Write segments to a file
+	// 	dataFilename := "data.db"
+	// 	keys, offsets := WriteSegmentsToFile(dataFilename, segments)
 
-	fmt.Println("Segments written to file.")
-	fmt.Println("Keys:", keys)
-	fmt.Println("Offsets:", offsets)
+	// 	fmt.Println("Segments written to file.")
+	// 	fmt.Println("Keys:", keys)
+	// 	fmt.Println("Offsets:", offsets)
 
-	// Create an index file
-	indexFilename := "index.db"
-	index := NewIndex(indexFilename, keys, offsets)
+	// 	// Create an index file
+	// 	indexFilename := "index.db"
+	// 	index := NewIndex(indexFilename, keys, offsets)
 
-	index.Sort()
-	summaryKeys, summaryOffsets := index.Write()
+	// 	index.Sort()
+	// 	summaryKeys, summaryOffsets := index.Write()
 
-	fmt.Println("Keys:", summaryKeys)
-	fmt.Println("Offsets:", summaryOffsets)
+	// 	fmt.Println("Keys:", summaryKeys)
+	// 	fmt.Println("Offsets:", summaryOffsets)
 
-	// Create a summary file
-	summaryFilename := "summary.db"
-	summary := NewSummary(summaryKeys, summaryOffsets, summaryFilename, 6)
-	summary.Print()
-	fmt.Println("Summary file created.")
+	// 	// Create a summary file
+	// 	summaryFilename := "summary.db"
+	// 	summary := NewSummary(summaryKeys, summaryOffsets, summaryFilename, 6)
+	// 	summary.Print()
+	// 	fmt.Println("Summary file created.")
 
-	// Test FindDataRecord using summary and index
-	testKeys := []string{"apple", "avocado", "banana", "cherry", "elderberry", "grape", "date", "watermelon", "banana", "kiwi", "fig", "xigua", "d"}
-	for _, key := range testKeys {
-		_, summaryOffset := summary.Find(key)
+	// 	// Test FindDataRecord using summary and index
+	// 	testKeys := []string{"apple", "avocado", "banana", "cherry", "elderberry", "grape", "date", "watermelon", "banana", "kiwi", "fig", "xigua", "d"}
+	// 	for _, key := range testKeys {
+	// 		_, summaryOffset := summary.Find(key)
 
-		found, dataOffset := index.FindIndex(key, summaryOffset)
+	// 		found, dataOffset := index.FindIndex(key, summaryOffset)
 
-		fmt.Println(dataOffset, "dataOffset", found, "found")
+	// 		fmt.Println(dataOffset, "dataOffset", found, "found")
 
-		// Use the offset to find the record in the data file
-		fmt.Println(dataOffset, "dataOffset")
-		record, recordFound := FindDataRecord(key, dataOffset, dataFilename)
-		if recordFound {
-			fmt.Printf("Record found for key '%s': %+v\n", key, record)
-		} else {
-			fmt.Printf("Record not found for key '%s'.\n", key)
-		}
-	}
+	// 		// Use the offset to find the record in the data file
+	// 		fmt.Println(dataOffset, "dataOffset")
+	// 		record, recordFound := FindDataRecord(key, dataOffset, dataFilename)
+	// 		if recordFound {
+	// 			fmt.Printf("Record found for key '%s': %+v\n", key, record)
+	// 		} else {
+	// 			fmt.Printf("Record not found for key '%s'.\n", key)
+	// 		}
+	// 	}
 }

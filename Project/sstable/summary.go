@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -81,51 +82,68 @@ func (s *Summary) Print() {
 	}
 }
 
-func (s *Summary) Write() error {
-	file, err := os.Create(s.Filename)
+func (s *Summary) Write(multipleFiles bool, offset uint64) uint64 {
+	currentOffset := uint64(0)
+	file, err := os.OpenFile(s.Filename, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		log.Fatal(err)
+	}
+
+	if !multipleFiles {
+		_, err = file.Seek(int64(offset), 0)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	minLen := uint64(len(s.Min))
 	err = binary.Write(file, binary.LittleEndian, minLen)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
+	currentOffset += 8
+
 	_, err = file.Write([]byte(s.Min))
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
+	currentOffset += uint64(len(s.Min))
 
 	maxLen := uint64(len(s.Max))
 	err = binary.Write(file, binary.LittleEndian, maxLen)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
+	currentOffset += 8
+
 	_, err = file.Write([]byte(s.Max))
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
+	currentOffset += uint64(len(s.Max))
 
 	for i, key := range s.Keys {
 		keyLen := uint64(len(key))
 		err = binary.Write(file, binary.LittleEndian, keyLen)
 		if err != nil {
-			return err
+			log.Fatal(err)
 		}
+		currentOffset += 8
 
 		_, err = file.Write([]byte(key))
 		if err != nil {
-			return err
+			log.Fatal(err)
 		}
+		currentOffset += uint64(len(key))
 
 		err = binary.Write(file, binary.LittleEndian, s.IndexOffsets[i])
 		if err != nil {
-			return err
+			log.Fatal(err)
 		}
+		currentOffset += 8
 
 	}
-	return nil
+	return currentOffset
 }
 
 func (s *Summary) Read() error {
