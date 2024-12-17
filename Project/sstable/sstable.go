@@ -330,7 +330,6 @@ func ReadMetadata(filename string) (Metadata, error) {
 		return metadata, err
 	}
 
-	fmt.Println("Metadata: ", "IsSingleFile: ", metadata.IsSingleFile, "DataOffset: ", metadata.DataOffset, "DataLength: ", metadata.DataLength, "IndexOffset: ", metadata.IndexOffset, "IndexLength: ", metadata.IndexLength, "SummaryOffset: ", metadata.SummaryOffset, "SummaryLength: ", metadata.SummaryLength, "FilterOffset: ", metadata.FilterOffset, "FilterLength: ", metadata.FilterLength)
 	return metadata, nil
 }
 
@@ -360,7 +359,6 @@ func createFiles(tableID int, oneFile bool) (string, error) {
 
 		for _, name := range fileNamesList {
 			filePath := fmt.Sprintf("%s%s", tableDir, name)
-			fmt.Println(filePath)
 			file, err := os.Create(filePath)
 			if err != nil {
 				return "", fmt.Errorf("failed to create file %s: %v", filePath, err)
@@ -370,7 +368,6 @@ func createFiles(tableID int, oneFile bool) (string, error) {
 	} else {
 		// Kreiraj jedan fajl ako je single file mod
 		filePath := fmt.Sprintf("%s/sstable-%04d/sstable-%04d.bin", tableDir, tableID, tableID)
-		fmt.Println(filePath)
 		file, err := os.Create(filePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to create single file: %v", err)
@@ -426,14 +423,12 @@ func FindInSstable(key string, filename string) (DataRecord, bool) {
 		var index *Index
 		found, offset = index.FindIndex(key, metadata.IndexOffset+offset, filename)
 		if !found {
-			fmt.Println("Key not found in index")
 			return DataRecord{}, false
 		}
 
 		// Pročitaj podatke
 		record, found := FindDataRecord(key, metadata.DataOffset+offset, filename)
 		if !found {
-			fmt.Println("Key not found in data")
 			return DataRecord{}, false
 		}
 
@@ -503,15 +498,30 @@ func FindInSstables(key string) (DataRecord, bool) {
 		directories = append(directories, line[:len(line)-1])
 	}
 
+	allRecords := make([]DataRecord, 0)
+
 	for _, dir := range directories {
 		tocfilename := fmt.Sprintf("data/sstable/%s/%s-TOC.txt", dir, dir)
 		dataRecord, found := FindInSstable(key, tocfilename)
 		if found {
-			return dataRecord, true
+			allRecords = append(allRecords, dataRecord)
 		}
 	}
 
-	return DataRecord{}, false
+	// Trazenje najnovijeg zapisa
+
+	if len(allRecords) == 0 {
+		return DataRecord{}, false
+	} else {
+		max := allRecords[0]
+		for _, record := range allRecords {
+			fmt.Println("Record timestamp: ", record.Timestamp)
+			if record.Timestamp > max.Timestamp {
+				max = record
+			}
+		}
+		return max, true
+	}
 
 }
 

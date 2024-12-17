@@ -19,7 +19,6 @@ type Index struct {
 }
 
 func NewIndex(filename string, keys []string, offsets []uint64) *Index {
-	fmt.Println("Index keys: ", keys)
 	index := Index{
 		Filename: filename,
 		Entries:  make([]KeyOffsetPair, 0),
@@ -187,8 +186,6 @@ func (i *Index) FindIndex(key string, startOffset uint64, filename string) (foun
 			offset = offsetC
 			return found, offset
 		}
-		fmt.Println("Curren key: ", currentKey)
-		fmt.Println("Key: ", key)
 		if currentKey < key {
 			closestKey = currentKey
 			closestOffset = offsetC

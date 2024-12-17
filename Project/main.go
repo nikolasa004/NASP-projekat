@@ -67,10 +67,10 @@ func main() {
 			kljuc := scanner.Text()
 			record := memtable.GetRecord(kljuc)
 			if record == nil {
-				fmt.Println("Trazenje u sstables")
 				record, found := sstable.FindInSstables(kljuc)
 				if found {
-					fmt.Println("Nadjeno: ", string(record.Value))
+					fmt.Println(record.Timestamp)
+					fmt.Println(string(record.Value))
 					continue
 				}
 			}

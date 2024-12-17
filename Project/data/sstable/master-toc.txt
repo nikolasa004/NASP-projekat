@@ -6,3 +6,5 @@ sstable-0005
 sstable-0006
 sstable-0007
 sstable-0008
+sstable-0009
+sstable-0010
