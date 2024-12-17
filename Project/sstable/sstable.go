@@ -161,9 +161,6 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 		log.Fatal(err)
 	}
 
-	info, _ := os.Stat(sstable.Filename)
-	print("File size: ", info.Size(), "\n")
-
 	var metadata Metadata
 	var currentOffset uint64
 
@@ -174,7 +171,7 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 
 	metadata.FilterOffset = currentOffset
 	metadata.FilterLength, _ = filter.Serialize(sstable.Filename)
-	info, _ = os.Stat(sstable.Filename)
+	info, _ := os.Stat(sstable.Filename)
 	currentOffset += uint64(info.Size())
 
 	metadata.DataOffset = currentOffset
@@ -183,11 +180,11 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 	metadata.DataLength = dataLength
 	currentOffset += dataLength
 
-
 	metadata.IndexOffset = currentOffset
 	index := NewIndex(sstable.Filename, keys, offsets)
 	index.Sort()
 	summaryKeys, summaryOffsets, indexLength := index.Write(false, currentOffset)
+	fmt.Println("Summary offsets: ", summaryOffsets)
 	metadata.IndexLength = indexLength
 	currentOffset += indexLength
 
@@ -196,7 +193,6 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 	summaryLength := summary.Write(false, currentOffset)
 	metadata.SummaryLength = summaryLength
 	currentOffset += summaryLength
-
 
 	err = WriteMetadata(sstable.Filename, metadata)
 
@@ -262,7 +258,6 @@ func WriteMetadata(filename string, metadata Metadata) error {
 		return err
 	}
 
-	fmt.Printf("Written metadata: %+v\n", metadata)
 	return nil
 }
 
@@ -282,9 +277,6 @@ func ReadMetadata(filename string) (Metadata, error) {
 	}
 
 	fileSize := stat.Size()
-	if fileSize < 80 { // Provera minimalne veličine
-		return metadata, fmt.Errorf("file too small to contain metadata")
-	}
 
 	// Pozicioniraj pokazivač na početak metapodataka
 	_, err = file.Seek(fileSize-72, io.SeekStart)
@@ -338,7 +330,7 @@ func ReadMetadata(filename string) (Metadata, error) {
 		return metadata, err
 	}
 
-	fmt.Printf("Read metadata: %+v\n", metadata)
+	fmt.Println("Metadata: ", "IsSingleFile: ", metadata.IsSingleFile, "DataOffset: ", metadata.DataOffset, "DataLength: ", metadata.DataLength, "IndexOffset: ", metadata.IndexOffset, "IndexLength: ", metadata.IndexLength, "SummaryOffset: ", metadata.SummaryOffset, "SummaryLength: ", metadata.SummaryLength, "FilterOffset: ", metadata.FilterOffset, "FilterLength: ", metadata.FilterLength)
 	return metadata, nil
 }
 
@@ -434,12 +426,14 @@ func FindInSstable(key string, filename string) (DataRecord, bool) {
 		var index *Index
 		found, offset = index.FindIndex(key, metadata.IndexOffset+offset, filename)
 		if !found {
+			fmt.Println("Key not found in index")
 			return DataRecord{}, false
 		}
 
 		// Pročitaj podatke
 		record, found := FindDataRecord(key, metadata.DataOffset+offset, filename)
 		if !found {
+			fmt.Println("Key not found in data")
 			return DataRecord{}, false
 		}
 
@@ -485,6 +479,40 @@ func FindInSstable(key string, filename string) (DataRecord, bool) {
 
 		return record, true
 	}
+}
+
+func FindInSstables(key string) (DataRecord, bool) {
+	masterToc, err := os.OpenFile("data/sstable/master-toc.txt", os.O_RDONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer masterToc.Close()
+
+	var directories []string
+	reader := bufio.NewReader(masterToc)
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Fatal(err)
+		}
+
+		directories = append(directories, line[:len(line)-1])
+	}
+
+	for _, dir := range directories {
+		tocfilename := fmt.Sprintf("data/sstable/%s/%s-TOC.txt", dir, dir)
+		dataRecord, found := FindInSstable(key, tocfilename)
+		if found {
+			return dataRecord, true
+		}
+	}
+
+	return DataRecord{}, false
+
 }
 
 // Napravio sam TOC file kako bi lakse mogao da se pristupi svim fajlovima

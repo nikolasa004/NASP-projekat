@@ -19,6 +19,7 @@ type Index struct {
 }
 
 func NewIndex(filename string, keys []string, offsets []uint64) *Index {
+	fmt.Println("Index keys: ", keys)
 	index := Index{
 		Filename: filename,
 		Entries:  make([]KeyOffsetPair, 0),
@@ -97,23 +98,17 @@ func (i *Index) Write(multipleFiles bool, offset uint64) (keys []string, offsets
 	return keys, offsets, currentOffset
 }
 
-func (i *Index) FindIndex(key string, startOffset uint64, filename string) (found bool, offset uint64) {
-	found = false
-	offset = 0
-
+func (i *Index) ReadIndex(offset uint64, filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer file.Close()
 
-	_, err = file.Seek(int64(startOffset), 0)
+	_, err = file.Seek(int64(offset), 0)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	var closestOffset uint64
-	var closestKey string
 
 	for {
 		var keyLen uint32
@@ -131,8 +126,55 @@ func (i *Index) FindIndex(key string, startOffset uint64, filename string) (foun
 			log.Fatal(err)
 		}
 
+		var offset uint64
+		err = binary.Read(file, binary.LittleEndian, &offset)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		i.Add(string(keyB), offset)
+	}
+
+	return nil
+}
+
+func (i *Index) FindIndex(key string, startOffset uint64, filename string) (found bool, offset uint64) {
+	found = false
+	offset = 0
+
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	fmt.Println("Start offset: ", startOffset)
+	_, err = file.Seek(int64(startOffset), 0)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var closestOffset uint64
+	var closestKey string
+
+	for {
+		var keyLen uint32
+		err := binary.Read(file, binary.LittleEndian, &keyLen)
+		if err != nil {
+			if err.Error() == "EOF" {
+				fmt.Println("EOF")
+				break
+			}
+			log.Fatal(err)
+		}
+
+		keyB := make([]byte, keyLen)
+		_, err = file.Read(keyB)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		currentKey := string(keyB)
-		fmt.Println("Current key: ", currentKey)
 
 		var offsetC uint64
 		err = binary.Read(file, binary.LittleEndian, &offsetC)
@@ -145,10 +187,12 @@ func (i *Index) FindIndex(key string, startOffset uint64, filename string) (foun
 			offset = offsetC
 			return found, offset
 		}
-
+		fmt.Println("Curren key: ", currentKey)
+		fmt.Println("Key: ", key)
 		if currentKey < key {
 			closestKey = currentKey
 			closestOffset = offsetC
+			break
 		} else {
 			// If currentKey > key, stop searching as the index keys are sorted
 			break

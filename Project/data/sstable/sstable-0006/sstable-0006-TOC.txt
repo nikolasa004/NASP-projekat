@@ -1,5 +1,2 @@
-0
-data/sstable/sstable-0006/sstable-0006-Data.bin
-data/sstable/sstable-0006/sstable-0006-Index.bin
-data/sstable/sstable-0006/sstable-0006-Summary.bin
-data/sstable/sstable-0006/sstable-0006-Filter.bin
+1
+data/sstable/sstable-0006/sstable-0006.bin

@@ -6,11 +6,11 @@
     },
     "Memtable": {
         "implementType": "SkipList",
-        "numOfTables": 3,
+        "numOfTables": 1,
         "tableSize": 3
     },
     "SsTableManager":{
-     "summarySampleRate":10,
+     "summarySampleRate":2,
      "oneFile":true,
      "compresion":false   
     }

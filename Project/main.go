@@ -7,6 +7,7 @@ import (
 	"project/BlockManager"
 	"project/Memtable"
 	"project/config"
+	"project/sstable"
 )
 
 func main() {
@@ -22,8 +23,8 @@ func main() {
 
 	//Memtable
 	implementType := "SkipList"
-	numOfTables := 1
-	tableSize := 1
+	numOfTables := 3
+	tableSize := 3
 
 	//SSTable
 	summarySampleRate := 10
@@ -65,9 +66,14 @@ func main() {
 			scanner.Scan()
 			kljuc := scanner.Text()
 			record := memtable.GetRecord(kljuc)
-			// if record == nil {
-			// 	//proveriti u SStable-u kada se implementira
-			// }
+			if record == nil {
+				fmt.Println("Trazenje u sstables")
+				record, found := sstable.FindInSstables(kljuc)
+				if found {
+					fmt.Println("Nadjeno: ", string(record.Value))
+					continue
+				}
+			}
 			if record != nil {
 				fmt.Println(string(record.Value))
 			} else {

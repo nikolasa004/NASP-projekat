@@ -30,13 +30,19 @@ func NewSummaryFromIndex(index *Index, filename string, sampleRate int) *Summary
 }
 
 func NewSummary(keys []string, offsets []uint64, filename string, sampleRate int) *Summary {
+	var maxi string
+	if len(keys) == 1 {
+		maxi = `~`
+	} else {
+		maxi = keys[len(keys)-1]
+	}
 	summary := &Summary{
 		Filename: filename,
 		Min:      keys[0],
-		Max:      keys[len(keys)-1],
+		Max:      maxi,
 	}
-	for i := range offsets {
-		if i == 0 || i%sampleRate == 0 {
+	for i := range keys {
+		if i%sampleRate == 0 {
 			summary.Add(keys[i], offsets[i])
 		}
 	}
@@ -47,10 +53,11 @@ func NewSummary(keys []string, offsets []uint64, filename string, sampleRate int
 func (s *Summary) Add(key string, offset uint64) {
 	s.Keys = append(s.Keys, key)
 	s.IndexOffsets = append(s.IndexOffsets, offset)
-	fmt.Print("Inserted" + "\n")
 }
 
 func (s *Summary) Find(key string) (bool, uint64) {
+	fmt.Println("Index Keys: ", s.Keys)
+	fmt.Println("Index offset: ", s.IndexOffsets)
 	// Provera da li je ključ u opsegu Summary-ja
 	if key < s.Min || key > s.Max {
 		return false, uint64(0)
@@ -170,6 +177,7 @@ func (s *Summary) ReadSummary(offset uint64, filename string) error {
 		return err
 	}
 	s.Min = string(minBytes)
+	fmt.Println("Min: ", s.Min)
 
 	var maxLen uint64
 	err = binary.Read(file, binary.LittleEndian, &maxLen)
@@ -184,6 +192,7 @@ func (s *Summary) ReadSummary(offset uint64, filename string) error {
 	}
 
 	s.Max = string(maxBytes)
+	fmt.Println("Max: ", s.Max)
 
 	s.Keys = nil
 	s.IndexOffsets = nil
@@ -196,6 +205,10 @@ func (s *Summary) ReadSummary(offset uint64, filename string) error {
 				break
 			}
 			return err
+		}
+
+		if keyLen == 0 {
+			break
 		}
 
 		keyBytes := make([]byte, keyLen)
