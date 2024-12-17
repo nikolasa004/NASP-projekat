@@ -26,8 +26,8 @@ func main() {
 	tableSize := 1
 
 	//SSTable
-	// summarySampleRate := 10
-	// oneFile := false
+	summarySampleRate := 10
+	oneFile := true
 	// compression := false
 
 	if err != nil {
@@ -39,8 +39,8 @@ func main() {
 		implementType = config.Memtable.ImplementType
 		numOfTables = config.Memtable.NumOfTables
 		tableSize = config.Memtable.TableSize
-		// summarySampleRate = config.SSTableManager.SummarySampleRate
-		// oneFile = config.SSTableManager.OneFile
+		summarySampleRate = config.SSTableManager.SummarySampleRate
+		oneFile = config.SSTableManager.OneFile
 		// compression = config.SSTableManager.Compresion
 	}
 
@@ -52,7 +52,7 @@ func main() {
 
 	for _, record := range reconstructRecs {
 		rec := memtable.CreateRecord(record.Tombstone, record.Key, record.Value)
-		memtable.PutRecord(rec, blockManager, blockManager.GetRecordSegments()[record.Key])
+		memtable.PutRecord(rec, blockManager, blockManager.GetRecordSegments()[record.Key], oneFile, summarySampleRate)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -85,7 +85,8 @@ func main() {
 				blockManager.PutRecord(record)
 			}
 			record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
-			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()})
+			fmt.Println("One file: ", oneFile)
+			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()}, oneFile, summarySampleRate)
 		} else if operacija == "DELETE" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -97,7 +98,7 @@ func main() {
 				blockManager.PutRecord(record)
 			}
 			record := memtable.CreateRecord(true, kljuc, []byte(""))
-			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()})
+			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()}, oneFile, summarySampleRate)
 		} else if operacija == "/" {
 			break
 		} else {

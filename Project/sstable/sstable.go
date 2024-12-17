@@ -49,10 +49,10 @@ func NewRecord(key string, value []byte, tombstone bool, timestamp uint64) DataR
 
 func GenerateSstableFilenames(baseDir string, tableID int) map[string]string {
 	filenames := map[string]string{
-		"Data":    fmt.Sprintf("%s/sstable-%04d-Data.bin", baseDir, tableID),
-		"Filter":  fmt.Sprintf("%s/sstable-%04d-Filter.bin", baseDir, tableID),
-		"Index":   fmt.Sprintf("%s/sstable-%04d-Index.bin", baseDir, tableID),
-		"Summary": fmt.Sprintf("%s/sstable-%04d-Summary.bin", baseDir, tableID),
+		"Data":    fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Data.bin", baseDir, tableID, tableID),
+		"Filter":  fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Filter.bin", baseDir, tableID, tableID),
+		"Index":   fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Index.bin", baseDir, tableID, tableID),
+		"Summary": fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Summary.bin", baseDir, tableID, tableID),
 		"TOC":     fmt.Sprintf("%s/sstable-%04d/sstable-%04d-TOC.txt", baseDir, tableID, tableID),
 	}
 
@@ -90,7 +90,6 @@ func NewSstable(data []DataRecord, sampleRate int, compaction bool) *Sstable {
 		Files: []string{sstable.DataFilename, sstable.IndexFilename, sstable.SummaryFilename, sstable.FilterFilename},
 	}
 
-	fmt.Println("TOC: ", filenames["TOC"])
 	err = WriteTOCFile(filenames["TOC"], false, toc.Files)
 
 	if err != nil {
@@ -121,6 +120,8 @@ func NewSstable(data []DataRecord, sampleRate int, compaction bool) *Sstable {
 	summary.Print()
 	summary.Write(true, 0)
 
+	UpdateMasterTOC(fmt.Sprintf("sstable-%04d", tableId))
+
 	return sstable
 }
 
@@ -140,18 +141,22 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 	filename := fmt.Sprintf("data/sstable/sstable-%04d/sstable-%04d", tableId, tableId)
 
 	sstable := &Sstable{
-		Filename: filename + ".bin",
+		Filename:        filename + ".bin",
+		DataFilename:    filename + ".bin",
+		IndexFilename:   filename + ".bin",
+		SummaryFilename: filename + ".bin",
+		FilterFilename:  filename + ".bin",
 	}
 
 	// Kreiranje fajla
-	createFiles(tableId, false)
+	createFiles(tableId, true)
 
 	toc := TOC{
 		SingleFile: true,
 		Files:      []string{sstable.Filename},
 	}
 
-	err = WriteTOCFile(filename, toc.SingleFile, toc.Files)
+	err = WriteTOCFile(filename+"-TOC.txt", toc.SingleFile, toc.Files)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -166,6 +171,7 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 	for _, record := range data {
 		filter.Add(record.Key)
 	}
+
 	metadata.FilterOffset = currentOffset
 	metadata.FilterLength, _ = filter.Serialize(sstable.Filename)
 	info, _ = os.Stat(sstable.Filename)
@@ -176,6 +182,7 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 	keys, offsets, dataLength := WriteSegmentsToFile(sstable.Filename, segments, false, currentOffset)
 	metadata.DataLength = dataLength
 	currentOffset += dataLength
+
 
 	metadata.IndexOffset = currentOffset
 	index := NewIndex(sstable.Filename, keys, offsets)
@@ -190,16 +197,14 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 	metadata.SummaryLength = summaryLength
 	currentOffset += summaryLength
 
-	fmt.Println("Filter offset: ", metadata.FilterOffset, " Filter length: ", metadata.FilterLength)
-	fmt.Println("Data offset: ", metadata.DataOffset, " Data length: ", metadata.DataLength)
-	fmt.Println("Index offset: ", metadata.IndexOffset, " Index length: ", metadata.IndexLength)
-	fmt.Println("Summary offset: ", metadata.SummaryOffset, " Summary length: ", metadata.SummaryLength)
 
 	err = WriteMetadata(sstable.Filename, metadata)
 
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	UpdateMasterTOC(fmt.Sprintf("sstable-%04d", tableId))
 
 	return sstable
 }
@@ -353,6 +358,8 @@ func createFiles(tableID int, oneFile bool) (string, error) {
 		return "", fmt.Errorf("failed to create folder for SSTable: %v", err)
 	}
 
+	tableDir = "data/sstable/"
+
 	// Generiši fajlove unutar foldera
 	if !oneFile {
 		fileNames := GenerateSstableFilenames("", tableID)
@@ -361,6 +368,7 @@ func createFiles(tableID int, oneFile bool) (string, error) {
 
 		for _, name := range fileNamesList {
 			filePath := fmt.Sprintf("%s%s", tableDir, name)
+			fmt.Println(filePath)
 			file, err := os.Create(filePath)
 			if err != nil {
 				return "", fmt.Errorf("failed to create file %s: %v", filePath, err)
@@ -369,7 +377,8 @@ func createFiles(tableID int, oneFile bool) (string, error) {
 		}
 	} else {
 		// Kreiraj jedan fajl ako je single file mod
-		filePath := fmt.Sprintf("%s/sstable-%04d.bin", tableDir, tableID)
+		filePath := fmt.Sprintf("%s/sstable-%04d/sstable-%04d.bin", tableDir, tableID, tableID)
+		fmt.Println(filePath)
 		file, err := os.Create(filePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to create single file: %v", err)
@@ -485,6 +494,8 @@ func WriteTOCFile(filename string, singleFile bool, files []string) error {
 		return err
 	}
 	defer file.Close()
+
+	fmt.Println(filename)
 
 	writer := bufio.NewWriter(file)
 

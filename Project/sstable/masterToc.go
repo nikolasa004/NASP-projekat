@@ -11,7 +11,7 @@ import (
 // pravim master TOC fajl, u njemu se nalaze spisak svih postojeci sstabela
 
 func UpdateMasterTOC(sstableDir string) error {
-	file, err := os.OpenFile("project/data/sstable/master-toc.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	file, err := os.OpenFile("data/sstable/master-toc.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		log.Fatal(err)
 		return err
@@ -55,7 +55,7 @@ func ReadMasterTOC() ([]string, error) {
 }
 
 func GetNextTableID() (int, error) {
-	file, err := os.Open("project/data/sstable/master-toc.txt")
+	file, err := os.Open("data/sstable/master-toc.txt")
 	if os.IsNotExist(err) {
 		return 1, nil
 	} else if err != nil {

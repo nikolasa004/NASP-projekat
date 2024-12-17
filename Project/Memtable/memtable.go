@@ -72,7 +72,7 @@ func (table *Memtable) GetRecord(kljuc string) *MemtableRecord {
 	return nil
 }
 
-func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockManager.BlockManager, currSegments []int) {
+func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockManager.BlockManager, currSegments []int, oneFile bool, sampleRate int) {
 	currTable := &table.tables[table.activeTable]
 	currTableSegments := (*currTable).GetLinkedSegments()
 	for _, currSegment := range currSegments {
@@ -112,7 +112,7 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 			rec := ConvertFromMemtableRecord(record)
 			sstableRecords[i] = rec
 		}
-		sstable.WriteSstable(sstableRecords, 4, false, false)
+		sstable.WriteSstable(sstableRecords, sampleRate, false, oneFile)
 		(*currTable).SetState("active")
 	}
 }

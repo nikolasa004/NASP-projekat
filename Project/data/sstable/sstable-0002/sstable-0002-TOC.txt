@@ -1,0 +1,5 @@
+0
+data/sstable/sstable-0002/sstable-0002-Data.bin
+data/sstable/sstable-0002/sstable-0002-Index.bin
+data/sstable/sstable-0002/sstable-0002-Summary.bin
+data/sstable/sstable-0002/sstable-0002-Filter.bin

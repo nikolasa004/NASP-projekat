@@ -11,7 +11,7 @@
     },
     "SsTableManager":{
      "summarySampleRate":10,
-     "oneFile":false,
+     "oneFile":true,
      "compresion":false   
     }
 }
