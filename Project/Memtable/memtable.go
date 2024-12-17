@@ -105,6 +105,7 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 			return
 		}
 		records := table.flushTable(currTable, blockManager)
+		fmt.Println(records[0].Key)
 		sstableRecords := make([]sstable.DataRecord, len(records))
 		//sada treba da se napravi sstable
 		for i, record := range records {
@@ -118,6 +119,7 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 
 func ConvertFromMemtableRecord(record *MemtableRecord) sstable.DataRecord {
 	rec := sstable.NewRecord(record.Key, record.Value, record.Tombstone, record.Timestamp)
+	fmt.Println("Converted record: ", rec)
 	return rec
 }
 

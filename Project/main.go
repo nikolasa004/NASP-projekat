@@ -22,8 +22,8 @@ func main() {
 
 	//Memtable
 	implementType := "SkipList"
-	numOfTables := 3
-	tableSize := 3
+	numOfTables := 1
+	tableSize := 1
 
 	//SSTable
 	// summarySampleRate := 10
