@@ -8,3 +8,6 @@ sstable-0007
 sstable-0008
 sstable-0009
 sstable-0010
+sstable-0011
+sstable-0012
+sstable-0013

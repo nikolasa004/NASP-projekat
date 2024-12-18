@@ -56,8 +56,6 @@ func (s *Summary) Add(key string, offset uint64) {
 }
 
 func (s *Summary) Find(key string) (bool, uint64) {
-	fmt.Println("Index Keys: ", s.Keys)
-	fmt.Println("Index offset: ", s.IndexOffsets)
 	// Provera da li je ključ u opsegu Summary-ja
 	if key < s.Min || key > s.Max {
 		return false, uint64(0)
@@ -172,12 +170,10 @@ func (s *Summary) ReadSummary(offset uint64, filename string) error {
 
 	minBytes := make([]byte, minLen)
 	_, err = file.Read(minBytes)
-	fmt.Println("Min: ", string(minBytes))
 	if err != nil {
 		return err
 	}
 	s.Min = string(minBytes)
-	fmt.Println("Min: ", s.Min)
 
 	var maxLen uint64
 	err = binary.Read(file, binary.LittleEndian, &maxLen)
@@ -192,7 +188,6 @@ func (s *Summary) ReadSummary(offset uint64, filename string) error {
 	}
 
 	s.Max = string(maxBytes)
-	fmt.Println("Max: ", s.Max)
 
 	s.Keys = nil
 	s.IndexOffsets = nil

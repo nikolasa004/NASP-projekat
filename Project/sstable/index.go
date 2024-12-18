@@ -87,12 +87,8 @@ func (i *Index) Write(multipleFiles bool, offset uint64) (keys []string, offsets
 		}
 		currentOffset += uint64(8)
 
-		fmt.Println(currentOffset)
-
 		keys = append(keys, entry.Key)
 	}
-
-	fmt.Println(offsets)
 
 	return keys, offsets, currentOffset
 }
@@ -146,8 +142,6 @@ func (i *Index) FindIndex(key string, startOffset uint64, filename string) (foun
 		log.Fatal(err)
 	}
 	defer file.Close()
-
-	fmt.Println("Start offset: ", startOffset)
 	_, err = file.Seek(int64(startOffset), 0)
 	if err != nil {
 		log.Fatal(err)
@@ -191,12 +185,10 @@ func (i *Index) FindIndex(key string, startOffset uint64, filename string) (foun
 			closestOffset = offsetC
 			break
 		} else {
-			// If currentKey > key, stop searching as the index keys are sorted
 			break
 		}
 	}
 
-	// If no exact match, return the closest preceding key and its offset
 	if closestKey != "" {
 		found = true
 		offset = closestOffset

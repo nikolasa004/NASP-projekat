@@ -112,12 +112,10 @@ func NewSstable(data []DataRecord, sampleRate int, compaction bool) *Sstable {
 	// Kreiranje indexa i upis index fajla
 	index := NewIndex(sstable.IndexFilename, keys, offsets)
 	index.Sort()
-	index.Print()
 	summaryKeys, summaryOffsets, _ := index.Write(true, 0)
 
 	// Kreiranje summary fajla i upis summary fajla
 	summary := NewSummary(summaryKeys, summaryOffsets, sstable.SummaryFilename, sampleRate)
-	summary.Print()
 	summary.Write(true, 0)
 
 	UpdateMasterTOC(fmt.Sprintf("sstable-%04d", tableId))
@@ -184,7 +182,6 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 	index := NewIndex(sstable.Filename, keys, offsets)
 	index.Sort()
 	summaryKeys, summaryOffsets, indexLength := index.Write(false, currentOffset)
-	fmt.Println("Summary offsets: ", summaryOffsets)
 	metadata.IndexLength = indexLength
 	currentOffset += indexLength
 
@@ -212,7 +209,6 @@ func WriteMetadata(filename string, metadata Metadata) error {
 	}
 	defer file.Close()
 
-	// Pozicioniraj se na kraj fajla
 	_, err = file.Seek(0, io.SeekEnd)
 	if err != nil {
 		return err
@@ -515,7 +511,6 @@ func FindInSstables(key string) (DataRecord, bool) {
 	} else {
 		max := allRecords[0]
 		for _, record := range allRecords {
-			fmt.Println("Record timestamp: ", record.Timestamp)
 			if record.Timestamp > max.Timestamp {
 				max = record
 			}
@@ -532,8 +527,6 @@ func WriteTOCFile(filename string, singleFile bool, files []string) error {
 		return err
 	}
 	defer file.Close()
-
-	fmt.Println(filename)
 
 	writer := bufio.NewWriter(file)
 

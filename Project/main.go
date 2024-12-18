@@ -23,8 +23,8 @@ func main() {
 
 	//Memtable
 	implementType := "SkipList"
-	numOfTables := 3
-	tableSize := 3
+	numOfTables := 10
+	tableSize := 10
 
 	//SSTable
 	summarySampleRate := 10
@@ -69,7 +69,6 @@ func main() {
 			if record == nil {
 				record, found := sstable.FindInSstables(kljuc)
 				if found {
-					fmt.Println(record.Timestamp)
 					fmt.Println(string(record.Value))
 					continue
 				}
