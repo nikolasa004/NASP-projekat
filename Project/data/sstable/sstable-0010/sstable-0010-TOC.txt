@@ -1,2 +1,0 @@
-1
-data/sstable/sstable-0010/sstable-0010.bin

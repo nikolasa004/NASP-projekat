@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 type TOC struct {
@@ -497,7 +498,8 @@ func FindInSstables(key string) (DataRecord, bool) {
 	allRecords := make([]DataRecord, 0)
 
 	for _, dir := range directories {
-		tocfilename := fmt.Sprintf("data/sstable/%s/%s-TOC.txt", dir, dir)
+		dir = strings.TrimSpace(dir)
+		tocfilename := "data/sstable/" + dir + "/" + dir + "-TOC.txt"
 		dataRecord, found := FindInSstable(key, tocfilename)
 		if found {
 			allRecords = append(allRecords, dataRecord)
@@ -515,7 +517,11 @@ func FindInSstables(key string) (DataRecord, bool) {
 				max = record
 			}
 		}
-		return max, true
+		if !max.Tombstone {
+			return max, true
+		} else {
+			return DataRecord{}, false
+		}
 	}
 
 }
