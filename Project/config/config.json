@@ -6,8 +6,8 @@
     },
     "Memtable": {
         "implementType": "SkipList",
-        "numOfTables": 1,
-        "tableSize": 3
+        "numOfTables": 10,
+        "tableSize": 10
     },
     "SsTableManager":{
      "summarySampleRate":2,
