@@ -9,21 +9,21 @@ import (
 )
 
 type BlockManager struct {
-	blockSize        int
-	blocksPerSegment int
-	bufferPool       *BufferPool
-	currentSegment   int
-	currentBlock     int
-	walPath          string        //putanja do wal foldera
-	segments         []string      //lista segmenata
-	orderOfSegments  map[int]int   //redosled segmenata, kljuc je redosled, vrednost je broj segmenta jer ne mora da bude od 0
-	recordSegments map[string][]int //mapira u kom segmentu je koji zapis
+	blockSize               int
+	blocksPerSegment        int
+	bufferPool              *BufferPool
+	currentSegment          int
+	currentBlock            int
+	walPath                 string           //putanja do wal foldera
+	segments                []string         //lista segmenata
+	orderOfSegments         map[int]int      //redosled segmenata, kljuc je redosled, vrednost je broj segmenta jer ne mora da bude od 0
+	recordSegments          map[string][]int //mapira u kom segmentu je koji zapis
+	differentConfigSegments map[string][]int //segmenti koji imaju drugaciju konfiguraciju od trenutne
 }
 
 func (blockManeger *BlockManager) GetBlockSize() int { //geter za velicinu bloka
 	return blockManeger.blockSize
 }
-
 
 func (blockManager *BlockManager) GetSegments() []string {
 	return blockManager.segments
@@ -36,7 +36,6 @@ func (blockManager *BlockManager) GetCurrentSegment() int {
 func (blockManager *BlockManager) GetCurrentBlock() int {
 	return blockManager.currentBlock
 }
-
 
 func (blockManager *BlockManager) GetRecordSegments() map[string][]int {
 	return blockManager.recordSegments
@@ -55,6 +54,7 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) 
 	var currentSegment int
 	var currentBlock int
 	orderOfSegments := make(map[int]int)
+	differentConfigSegments := make(map[string][]int)
 	if len(files) == 0 { //pravimo pocetni segment
 		segment := walPath + "/wal_0.log"
 		segments = append(segments, segment)
@@ -113,10 +113,9 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) 
 			blocksPerSegmentOfSegment := int(binary.LittleEndian.Uint32(hederBytes[4:8]))
 			segmentNumber := int(binary.LittleEndian.Uint32(hederBytes[8:12]))
 
-			//ovo treba da se napravi da moze da se oporavi sistem ako se promeni velicina bloka ili broj blokova po segmentu
-			//za sada samo proveravamo da li su isti
+			//provera da li je konfiguracija segmenta ista kao trenutna
 			if blockSizeOfSegment != blockSize || blocksPerSegmentOfSegment != blocksPerSegment {
-				panic("Segment " + segment.Name() + " has different block size or blocks per segment")
+				differentConfigSegments[walPath+"/"+segment.Name()] = []int{blockSizeOfSegment, blocksPerSegmentOfSegment}
 			}
 
 			file.Close()
@@ -145,19 +144,20 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) 
 	}
 
 	return &BlockManager{
-		blockSize:        blockSize,
-		blocksPerSegment: blocksPerSegment,
-		bufferPool:       &bufferPool,
-		currentSegment:   currentSegment,
-		currentBlock:     currentBlock,
-		walPath:          walPath,
-		segments:         segments,
-		orderOfSegments:  orderOfSegments,
-		recordSegments: make(map[string][]int),
+		blockSize:               blockSize,
+		blocksPerSegment:        blocksPerSegment,
+		bufferPool:              &bufferPool,
+		currentSegment:          currentSegment,
+		currentBlock:            currentBlock,
+		walPath:                 walPath,
+		segments:                segments,
+		orderOfSegments:         orderOfSegments,
+		recordSegments:          make(map[string][]int),
+		differentConfigSegments: differentConfigSegments,
 	}
 }
 
-func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja podize sistem i rekonstruise stanje
+func (blockManager *BlockManager) Reconstruct() []WalRecord { //funkcija koja podize sistem i rekonstruise stanje
 	endOfLastSegment := false
 	fullSegment := false
 
@@ -165,85 +165,153 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja pod
 	fragmentedParts := []WalRecord{}
 	currentFragmentedPosition := 1
 	recordSegments := make(map[string][]int) //mapira kljuc recorda na listu segmenata u kojima se nalazi
-	i := 0 //brojac segmenata
+	i := 0                                   //brojac segmenata
 	for _, segment := range blockManager.segments {
 		fullSegment = false
-		for blockManager.currentBlock <= blockManager.blocksPerSegment {
-			key := segment + "-" + strconv.Itoa(blockManager.currentBlock)
+		if blockManager.differentConfigSegments[segment] != nil { //ako je konfiguracija segmenta drugacija od trenutne, citamo ga posebno
+			for blockManager.currentBlock <= blockManager.differentConfigSegments[segment][1] {
+				if blockManager.currentBlock == 0 {
+					block := blockManager.GetWalBlock(segment, blockManager.currentBlock, blockManager.differentConfigSegments[segment][0])
+					firstBlock := int(binary.LittleEndian.Uint32(block[12:16]))
+					blockManager.currentBlock = firstBlock
+					fmt.Println("First block: ", firstBlock)
+					continue
+				}
 
-			if blockManager.currentBlock == 0 {
-				//citamo prvi korisni blok iz headera segmenta
-				block := blockManager.GetWalBlock(segment, blockManager.currentBlock)
-				firstBlock := int(binary.LittleEndian.Uint32(block[12:16]))
-				blockManager.currentBlock = firstBlock
-				fmt.Println("First block: ", firstBlock)
-				continue
-			}
-
-			block := blockManager.GetWalBlock(segment, blockManager.currentBlock)
-			if block != nil {
-				blockManager.bufferPool.Put(key, block, false)
-
-				//ovde treba da se blok prosledi memtable-u na rekonstrukciju
-				//radi provere sada samo ispisujemo blok
-				records := ReadAllRecords(block, int64(blockManager.blockSize))
-
-				for _, record := range records {
-					segmentList, ok := recordSegments[record.Key]
-					//moguce je da je zapis fragmentovan i da se nalazi u vise delova, zato imamo listu segmenata
-					if !ok {
-						segmentList = []int{}
-						segmentList = append(segmentList, i)
-						recordSegments[record.Key] = segmentList
-					} else {
-						contains := false
-						for _, segment := range segmentList {
-							if segment == i {
-								contains = true
-								break
-							}
-						}
-						if !contains {
+				block := blockManager.GetWalBlock(segment, blockManager.currentBlock, blockManager.differentConfigSegments[segment][0])
+				if block != nil {
+					records := ReadAllRecords(block, int64(blockManager.differentConfigSegments[segment][0]))
+					for _, record := range records {
+						segmentList, ok := recordSegments[record.Key]
+						if !ok {
+							segmentList = []int{}
 							segmentList = append(segmentList, i)
 							recordSegments[record.Key] = segmentList
-						}
-					}
-
-					if record.Type == 0 {
-						fullRecords = append(fullRecords, record)
-					} else {
-
-						if currentFragmentedPosition == int(record.Type) {
-							fragmentedParts = append(fragmentedParts, record)
-							currentFragmentedPosition++
 						} else {
-							currentFragmentedPosition = 1
-
-							keyBytes := []byte{}
-							valueBytes := []byte{}
-
-							for _, part := range fragmentedParts {
-								keyBytes = append(keyBytes, part.Key...)
-								valueBytes = append(valueBytes, part.Value...)
+							contains := false
+							for _, segment := range segmentList {
+								if segment == i {
+									contains = true
+									break
+								}
 							}
+							if !contains {
+								segmentList = append(segmentList, i)
+								recordSegments[record.Key] = segmentList
+							}
+						}
 
-							fullRecord := fragmentedParts[0]
-							fullRecord.Key = string(keyBytes)
-							fullRecord.Value = valueBytes
+						if record.Type == 0 {
+							fullRecords = append(fullRecords, record)
+						} else {
+							if currentFragmentedPosition == int(record.Type) {
+								fragmentedParts = append(fragmentedParts, record)
+								currentFragmentedPosition++
+							} else {
+								currentFragmentedPosition = 1
 
-							fullRecords = append(fullRecords, fullRecord)
-							fragmentedParts = []WalRecord{}
+								keyBytes := []byte{}
+								valueBytes := []byte{}
 
-							fragmentedParts = append(fragmentedParts, record)
-							currentFragmentedPosition++
+								for _, part := range fragmentedParts {
+									keyBytes = append(keyBytes, part.Key...)
+									valueBytes = append(valueBytes, part.Value...)
+								}
+
+								fullRecord := fragmentedParts[0]
+								fullRecord.Key = string(keyBytes)
+								fullRecord.Value = valueBytes
+
+								fullRecords = append(fullRecords, fullRecord)
+								fragmentedParts = []WalRecord{}
+
+								fragmentedParts = append(fragmentedParts, record)
+								currentFragmentedPosition++
+							}
 						}
 					}
+				} else {
+					endOfLastSegment = true
+					break
 				}
-			} else {
-				endOfLastSegment = true
-				break
+				blockManager.currentBlock++
 			}
-			blockManager.currentBlock++
+		} else {
+			for blockManager.currentBlock <= blockManager.blocksPerSegment {
+				key := segment + "-" + strconv.Itoa(blockManager.currentBlock)
+
+				if blockManager.currentBlock == 0 {
+					//citamo prvi korisni blok iz headera segmenta
+					block := blockManager.GetWalBlock(segment, blockManager.currentBlock, blockManager.blockSize)
+					firstBlock := int(binary.LittleEndian.Uint32(block[12:16]))
+					blockManager.currentBlock = firstBlock
+					fmt.Println("First block: ", firstBlock)
+					continue
+				}
+
+				block := blockManager.GetWalBlock(segment, blockManager.currentBlock, blockManager.blockSize)
+				if block != nil {
+					blockManager.bufferPool.Put(key, block, false)
+
+					records := ReadAllRecords(block, int64(blockManager.blockSize))
+
+					for _, record := range records {
+						segmentList, ok := recordSegments[record.Key]
+						//moguce je da je zapis fragmentovan i da se nalazi u vise delova, zato imamo listu segmenata
+						if !ok {
+							segmentList = []int{}
+							segmentList = append(segmentList, i)
+							recordSegments[record.Key] = segmentList
+						} else {
+							contains := false
+							for _, segment := range segmentList {
+								if segment == i {
+									contains = true
+									break
+								}
+							}
+							if !contains {
+								segmentList = append(segmentList, i)
+								recordSegments[record.Key] = segmentList
+							}
+						}
+
+						if record.Type == 0 {
+							fullRecords = append(fullRecords, record)
+						} else {
+
+							if currentFragmentedPosition == int(record.Type) {
+								fragmentedParts = append(fragmentedParts, record)
+								currentFragmentedPosition++
+							} else {
+								currentFragmentedPosition = 1
+
+								keyBytes := []byte{}
+								valueBytes := []byte{}
+
+								for _, part := range fragmentedParts {
+									keyBytes = append(keyBytes, part.Key...)
+									valueBytes = append(valueBytes, part.Value...)
+								}
+
+								fullRecord := fragmentedParts[0]
+								fullRecord.Key = string(keyBytes)
+								fullRecord.Value = valueBytes
+
+								fullRecords = append(fullRecords, fullRecord)
+								fragmentedParts = []WalRecord{}
+
+								fragmentedParts = append(fragmentedParts, record)
+								currentFragmentedPosition++
+							}
+						}
+					}
+				} else {
+					endOfLastSegment = true
+					break
+				}
+				blockManager.currentBlock++
+			}
 		}
 		if endOfLastSegment {
 			break
@@ -261,6 +329,15 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja pod
 		blockManager.currentBlock = blockManager.blocksPerSegment
 	}
 
+	//ako je poslednji segment po staroj konfiguraciji moramo da ga popunimo sa padding blokovima i kreiramo novi segment
+	if blockManager.differentConfigSegments[blockManager.segments[len(blockManager.segments)-1]] != nil {
+		paddingSize := blockManager.blockSize * (blockManager.blocksPerSegment - blockManager.currentBlock)
+		padding := make([]byte, paddingSize)
+		blockManager.currentBlock = blockManager.blocksPerSegment
+		blockManager.writeBlock(padding, blockManager.differentConfigSegments[blockManager.segments[len(blockManager.segments)-1]][0])
+	}
+
+	//ako je poslednji zapis fragmentovan, treba ga dodati u fullRecords
 	if len(fragmentedParts) > 0 {
 		keyBytes := []byte{}
 		valueBytes := []byte{}
@@ -286,7 +363,7 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord{ //funkcija koja pod
 	return fullRecords
 }
 
-func (blockManager *BlockManager) GetWalBlock(filename string, blockPosition int) []byte { //funkcija koja vraca zadati blok iz WAL-a
+func (blockManager *BlockManager) GetWalBlock(filename string, blockPosition, blockSize int) []byte { //funkcija koja vraca zadati blok iz WAL-a
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0644)
 
 	if err != nil {
@@ -295,7 +372,7 @@ func (blockManager *BlockManager) GetWalBlock(filename string, blockPosition int
 
 	defer file.Close()
 
-	seekValue := int64(blockPosition * blockManager.blockSize)
+	seekValue := int64(blockPosition * blockSize)
 	info, err := file.Stat()
 	if err != nil {
 		panic(err)
@@ -305,9 +382,9 @@ func (blockManager *BlockManager) GetWalBlock(filename string, blockPosition int
 		return nil
 	}
 
-	file.Seek(int64(blockPosition*blockManager.blockSize), 0)
+	file.Seek(int64(blockPosition*blockSize), 0)
 
-	block := make([]byte, blockManager.blockSize)
+	block := make([]byte, blockSize)
 	_, err = file.Read(block)
 
 	if err != nil {
@@ -339,11 +416,11 @@ func (blockManager *BlockManager) PutBlock(key string, value []byte) { //funkcij
 	}
 
 	if returnedValue != nil && key[0] == 'w' { //ako je vracen blok znaci da je on izmenjen u bafer pool-u i treba ga upisati na disk ali samo ako je iz wal-a
-		blockManager.writeBlock(returnedValue)
+		blockManager.writeBlock(returnedValue, blockManager.blockSize)
 	}
 }
 
-func (blockManager *BlockManager) writeBlock(value []byte) { //funkcija koja upisuje blok u WAL
+func (blockManager *BlockManager) writeBlock(value []byte, seekValue int) { //funkcija koja upisuje blok u WAL
 	segment := blockManager.segments[blockManager.currentSegment]
 
 	file, err := os.OpenFile(segment, os.O_WRONLY, 0644)
@@ -354,7 +431,7 @@ func (blockManager *BlockManager) writeBlock(value []byte) { //funkcija koja upi
 
 	defer file.Close()
 
-	file.Seek(int64(blockManager.currentBlock*blockManager.blockSize), 0)
+	file.Seek(int64(blockManager.currentBlock*seekValue), 0)
 	_, err = file.Write(value)
 
 	if err != nil {
@@ -414,7 +491,7 @@ func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja doda
 			block = append(block, padding...)
 			blockManager.bufferPool.Update(key, block)
 
-			blockManager.writeBlock(block)
+			blockManager.writeBlock(block, blockManager.blockSize)
 
 			key = blockManager.segments[blockManager.currentSegment] + "-" + strconv.Itoa(blockManager.currentBlock)
 			newBlock := []byte{}
@@ -433,4 +510,17 @@ func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija 
 		os.Remove(blockManager.segments[i])
 	}
 	blockManager.segments = blockManager.segments[lowWatermark:]
+}
+
+func (blockManager *BlockManager) FlushUnsaved() { //funkcija koja upisuje sve neupisane blokove u WAL
+	blocksForFlush := blockManager.bufferPool.Flush()
+
+	for _, block := range blocksForFlush {
+		if len(block) != blockManager.blockSize {
+			paddingSize := blockManager.blockSize - len(block)
+			padding := make([]byte, paddingSize)
+			block = append(block, padding...)
+		}
+		blockManager.writeBlock(block, blockManager.blockSize)
+	}
 }

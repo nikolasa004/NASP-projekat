@@ -58,6 +58,7 @@ func (bufferPool *BufferPool) Put(key string, value []byte, newBlock bool) []byt
 	if len(bufferPool.Buffer) == bufferPool.maxSize {
 		if bufferPool.dirtyBlocks[bufferPool.lruList[0]] {
 			blockForFlush = bufferPool.Buffer[bufferPool.lruList[0]]
+			bufferPool.dirtyBlocks[bufferPool.lruList[0]] = false
 		}
 		bufferPool.deleteBlock(bufferPool.lruList[0])
 	}
@@ -77,4 +78,15 @@ func (bufferPool *BufferPool) Update(key string, value []byte) { //funkcija koja
 	bufferPool.Buffer[key] = value
 	bufferPool.dirtyBlocks[key] = true
 	bufferPool.updateLRU(key)
+}
+
+func (bufferPool *BufferPool) Flush() map[string][]byte { //funkcija koja vraca sve promenjene zapise iz bafer pool-a
+	flushedBlocks := make(map[string][]byte)
+	for key, value := range bufferPool.Buffer {
+		if bufferPool.dirtyBlocks[key] {
+			flushedBlocks[key] = value
+			bufferPool.dirtyBlocks[key] = false
+		}
+	}
+	return flushedBlocks
 }

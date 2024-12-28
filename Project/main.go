@@ -105,6 +105,7 @@ func main() {
 			record := memtable.CreateRecord(true, kljuc, []byte(""))
 			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()}, oneFile, summarySampleRate)
 		} else if operacija == "/" {
+			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal
 			break
 		} else {
 			fmt.Println("Nepostojeca operacija")
