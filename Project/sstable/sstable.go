@@ -493,6 +493,9 @@ func FindInSstables(key string) (DataRecord, bool) {
 			log.Fatal(err)
 		}
 		directories = append(directories, line[:len(line)-1])
+		for i, j := 0, len(directories)-1; i < j; i, j = i+1, j-1 {
+			directories[i], directories[j] = directories[j], directories[i]
+		}
 	}
 
 	allRecords := make([]DataRecord, 0)
@@ -500,6 +503,7 @@ func FindInSstables(key string) (DataRecord, bool) {
 	for _, dir := range directories {
 		dir = strings.TrimSpace(dir)
 		tocfilename := "data/sstable/" + dir + "/" + dir + "-TOC.txt"
+		fmt.Println(tocfilename)
 		dataRecord, found := FindInSstable(key, tocfilename)
 		if found {
 			allRecords = append(allRecords, dataRecord)
