@@ -386,6 +386,7 @@ func FindInSstable(key string, filename string) (DataRecord, bool) {
 	files := toc.Files
 	if oneFile {
 		filename = files[0]
+		filename = strings.TrimSpace(filename)
 		file, err := os.Open(filename)
 		if err != nil {
 			log.Fatal(err)
@@ -491,7 +492,6 @@ func FindInSstables(key string) (DataRecord, bool) {
 			}
 			log.Fatal(err)
 		}
-
 		directories = append(directories, line[:len(line)-1])
 	}
 
@@ -582,7 +582,6 @@ func ReadTOCFile(filename string) (TOC, error) {
 			}
 			return toc, err
 		}
-
 		toc.Files = append(toc.Files, line[:len(line)-1])
 	}
 
