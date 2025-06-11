@@ -41,8 +41,9 @@ func (blockManager *BlockManager) GetRecordSegments() map[string][]int {
 	return blockManager.recordSegments
 }
 
-func NewBlockManager(blockSize, blocksPerSegment, poolSize int, walPath string) *BlockManager { //konstruktor za BlockManager
+func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { //konstruktor za BlockManager
 	bufferPool := NewBufferPool(poolSize)
+	walPath := "BlockManager/wal"
 
 	files, err := os.ReadDir(walPath)
 	if err != nil {

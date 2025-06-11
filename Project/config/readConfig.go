@@ -49,6 +49,8 @@ func ReadConfig() Config { //cita konfiguracioni fajl i vraca strukturu Config
 
 	json.Unmarshal(file, &config) //parsira json fajl i smesta ga u strukturu
 
+	CheckValidConfig(&config) //proverava da li su vrednosti u konfiguraciji validne
+
 	return config
 }
 
@@ -72,6 +74,43 @@ func WriteConfig() Config { //pravi novi konfiguracioni fajl
 	return config
 }
 
+func CheckValidConfig(config *Config) { //proverava da li su vrednosti u konfiguraciji validne
+	if config.BlockManager.BlocksInSegment <= 0 {
+		log.Print("Nevalidan broj blokova u segmentu, postavljanje na podrazumevanu vrednost 10")
+		config.BlockManager.BlocksInSegment = 10
+	}
+
+	if config.BlockManager.BlockSize != 4096 && config.BlockManager.BlockSize != 8192 && config.BlockManager.BlockSize != 16384 {
+		log.Print("Nevalidna velicina bloka, postavljanje na podrazumevanu vrednost 4096")
+		config.BlockManager.BlockSize = 4096 // 4KB
+	}
+
+	if config.BlockManager.CacheSize <= 0 {
+		log.Print("Nevalidna velicina blok keša, postavljanje na podrazumevanu vrednost 10")
+		config.BlockManager.CacheSize = 10
+	}
+
+	if config.Memtable.ImplementType != "SkipList" && config.Memtable.ImplementType != "Hashmap" && config.Memtable.ImplementType != "BTree" {
+		log.Print("Nevalidan tip implementacije Memtable, postavljanje na podrazumevanu vrednost 'SkipList'")
+		config.Memtable.ImplementType = "SkipList"
+	}
+
+	if config.Memtable.NumOfTables <= 0 {
+		log.Print("Nevalidan broj tabela u Memtable, postavljanje na podrazumevanu vrednost 10")
+		config.Memtable.NumOfTables = 10
+	}
+
+	if config.Memtable.TableSize <= 0 {
+		log.Print("Nevalidna velicina tabele u Memtable, postavljanje na podrazumevanu vrednost 10")
+		config.Memtable.TableSize = 10
+	}
+
+	if config.SSTableManager.SummarySampleRate <= 0 {
+		log.Print("Nevalidna stopa uzorka za index summary, postavljanje na podrazumevanu vrednost 10")
+		config.SSTableManager.SummarySampleRate = 10
+	}
+}
+
 func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 	config := Config{
 		BlockManager: struct {
@@ -80,7 +119,7 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 			CacheSize       int `json:"cacheSize"`
 		}{
 			BlocksInSegment: 10,
-			BlockSize:       1024,
+			BlockSize:       4096,
 			CacheSize:       10,
 		},
 		Memtable: struct {

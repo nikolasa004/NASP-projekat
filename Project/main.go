@@ -28,8 +28,7 @@ func main() {
 	oneFile := config.SSTableManager.OneFile
 	// compression := config.SSTableManager.Compresion
 
-	walPath := "BlockManager/wal"
-	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, cacheSize, walPath)
+	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, cacheSize)
 	reconstructRecs := blockManager.Reconstruct()
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
@@ -38,6 +37,7 @@ func main() {
 		rec := memtable.CreateRecord(record.Tombstone, record.Key, record.Value)
 		memtable.PutRecord(rec, blockManager, blockManager.GetRecordSegments()[record.Key], oneFile, summarySampleRate)
 	}
+
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
@@ -48,19 +48,20 @@ func main() {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
 			kljuc := scanner.Text()
+
 			record := memtable.GetRecord(kljuc)
-			if record == nil {
+			if record != nil {
+				fmt.Println(string(record.Value))
+				continue
+			} else {
 				record, found := sstable.FindInSstables(kljuc)
 				if found {
 					fmt.Println(string(record.Value))
 					continue
 				}
 			}
-			if record != nil {
-				fmt.Println(string(record.Value))
-			} else {
-				fmt.Println("Nema takvog kljuca")
-			}
+
+			fmt.Println("Nema takvog kljuca")
 		} else if operacija == "PUT" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -68,12 +69,12 @@ func main() {
 			fmt.Println("Unesite vrednost: ")
 			scanner.Scan()
 			vrednost := scanner.Text()
+
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
 			record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
-			fmt.Println("One file: ", oneFile)
 			memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()}, oneFile, summarySampleRate)
 		} else if operacija == "DELETE" {
 			fmt.Println("Unesite kljuc: ")
