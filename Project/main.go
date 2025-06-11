@@ -39,11 +39,18 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
+	pomocnik := 7
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
 		var operacija string
-		scanner.Scan()
-		operacija = scanner.Text()
+		// scanner.Scan()
+		// operacija = scanner.Text()
+		if pomocnik > 0 {
+			operacija = "PUT" // za testiranje, moze se menjati na GET ili DELETE
+			pomocnik--
+		} else {
+			//operacija = "/"
+		}
 		if operacija == "GET" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -63,12 +70,22 @@ func main() {
 
 			fmt.Println("Nema takvog kljuca")
 		} else if operacija == "PUT" {
-			fmt.Println("Unesite kljuc: ")
-			scanner.Scan()
-			kljuc := scanner.Text()
-			fmt.Println("Unesite vrednost: ")
-			scanner.Scan()
-			vrednost := scanner.Text()
+			// fmt.Println("Unesite kljuc: ")
+			// scanner.Scan()
+			// kljuc := scanner.Text()
+			// fmt.Println("Unesite vrednost: ")
+			// scanner.Scan()
+			// vrednost := scanner.Text()
+
+			kljuc := "key1"
+			file, err := os.ReadFile("primer.txt")
+			if err != nil {
+				fmt.Println("Greska pri citanju fajla:", err)
+				continue
+			}
+			vrednost := string(file)
+
+			fmt.Println("Total size in bytes:", len([]byte(vrednost)))
 
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize)
 			for _, record := range records {

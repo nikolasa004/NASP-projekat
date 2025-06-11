@@ -63,17 +63,7 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 	keySize := uint64(len(key))
 	valueSize := uint64(len(value))
 
-	size := CRC_SIZE + SIZE_SIZE + TYPE_SIZE + TIMESTAMP_SIZE + TOMBSTONE_SIZE + KEY_SIZE_SIZE + VALUE_SIZE_SIZE + keySize + valueSize
-
-	if 3*uint64(blockSize) < size {
-		log.Fatal("Key or value size is bigger than 3*block size, fragmentation is not possible")
-	}
-
 	constMaxSize := uint64(blockSize) - CRC_SIZE - SIZE_SIZE - TYPE_SIZE - TIMESTAMP_SIZE - TOMBSTONE_SIZE - KEY_SIZE_SIZE - VALUE_SIZE_SIZE
-
-	if keySize > constMaxSize || valueSize > constMaxSize {
-		log.Fatal("Key or value size is bigger than block size")
-	}
 
 	if keySize+valueSize <= constMaxSize {
 		walRecord := CreateWalRecord(tombstone, key, value, 0)
@@ -82,110 +72,64 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 	} else {
 		fragmentedConstMaxSize := blockSize - CRC_SIZE - SIZE_SIZE - TYPE_SIZE - KEY_SIZE_SIZE - VALUE_SIZE_SIZE
 
-		if keySize > constMaxSize { //ako je kljuc veci od jednog pocetnog bloka
-			newKeySize := constMaxSize
+		firstFragmentation := true
+		newKeySize := uint64(0)
+		newValueSize := uint64(0)
+		var binaryRecord []byte
+		numberOfFragmentation := 1
+		for { //dokle god je kljuc ili vrednost veca od maksimalne velicine bloka
+			if (firstFragmentation && keySize > constMaxSize) || (!firstFragmentation && keySize > uint64(fragmentedConstMaxSize)) { //ako je kljuc veci od jednog pocetnog bloka
+				if firstFragmentation {
+					newKeySize = constMaxSize
+				} else {
+					newKeySize = uint64(fragmentedConstMaxSize)
+				}
 
-			newValueSize := 0
+				newKey := key[:newKeySize]
+				newValue := []byte{}
 
-			newKey := key[:newKeySize]
-			newValue := []byte{}
+				if firstFragmentation {
+					walRecord := CreateWalRecord(tombstone, newKey, newValue, numberOfFragmentation)
+					binaryRecord = walRecord.CreateBinaryRecord()
+				} else {
+					walRecord := CreateFragmentedWalRecord(newKey, newValue, numberOfFragmentation)
+					binaryRecord = walRecord.CreateFragmentedBinaryRecord()
+				}
+				binaryRecords = append(binaryRecords, binaryRecord)
 
-			firstWalRecord := CreateWalRecord(tombstone, newKey, newValue, 1)
-			firstBinaryRecord := firstWalRecord.CreateBinaryRecord()
+				numberOfFragmentation++
+				key = key[newKeySize:]
+				keySize = keySize - newKeySize
+			} else if (firstFragmentation && valueSize > constMaxSize) || (!firstFragmentation && valueSize > uint64(fragmentedConstMaxSize)) { //ako je vrednost veca od jednog pocetnog bloka
+				if firstFragmentation {
+					newValueSize = constMaxSize
+				} else {
+					newValueSize = uint64(fragmentedConstMaxSize)
+				}
 
-			binaryRecords = append(binaryRecords, firstBinaryRecord)
+				newKey := ""
+				newValue := value[:newValueSize]
 
-			newKeySize = keySize - constMaxSize
+				if firstFragmentation {
+					walRecord := CreateWalRecord(tombstone, newKey, newValue, numberOfFragmentation)
+					binaryRecord = walRecord.CreateBinaryRecord()
+				} else {
+					walRecord := CreateFragmentedWalRecord(newKey, newValue, numberOfFragmentation)
+					binaryRecord = walRecord.CreateFragmentedBinaryRecord()
+				}
+				binaryRecords = append(binaryRecords, binaryRecord)
 
-			if newKeySize > uint64(fragmentedConstMaxSize) { //ako je i dalje ostatak kljuca veci od fragmentisanog bloka
-				newKeySize = uint64(fragmentedConstMaxSize)
-
-				newKey = key[constMaxSize : constMaxSize+newKeySize]
-
-				secondWalRecord := CreateFragmentedWalRecord(newKey, newValue, 2)
-				secondBinaryrecord := secondWalRecord.CreateFragmentedBinaryRecord()
-
-				binaryRecords = append(binaryRecords, secondBinaryrecord)
-
-				newKey = key[constMaxSize+uint64(fragmentedConstMaxSize):]
-
-				newValue = value
-
-				thirdWalRecord := CreateFragmentedWalRecord(newKey, newValue, 3)
-				thirdBinaryRecord := thirdWalRecord.CreateFragmentedBinaryRecord()
-
-				binaryRecords = append(binaryRecords, thirdBinaryRecord)
-			} else if int(valueSize) > fragmentedConstMaxSize { //ako je vrednost veca od jednog fragmentisanog bloka
-				newKey = key[constMaxSize:]
-				newKeySize = keySize - constMaxSize
-
-				newValueSize = fragmentedConstMaxSize - int(newKeySize)
-
-				newValue = value[:newValueSize]
-
-				secondWalRecord := CreateFragmentedWalRecord(newKey, newValue, 2)
-				secondBinaryRecord := secondWalRecord.CreateFragmentedBinaryRecord()
-
-				binaryRecords = append(binaryRecords, secondBinaryRecord)
-
-				newValue = value[fragmentedConstMaxSize-int(newKeySize):]
-
-				newKey = ""
-
-				thirdWalRecord := CreateFragmentedWalRecord(newKey, newValue, 3)
-				thirdBinaryRecord := thirdWalRecord.CreateFragmentedBinaryRecord()
-
-				binaryRecords = append(binaryRecords, thirdBinaryRecord)
-			} else { //ako je i kljuc i vrednost manji od fragmentisanog bloka nece biti treceg zapisa
-				newKey = key[constMaxSize:]
-				newValue = value
-
-				secondWalRecord := CreateFragmentedWalRecord(newKey, newValue, 2)
-				secondBinaryRecord := secondWalRecord.CreateFragmentedBinaryRecord()
-
-				binaryRecords = append(binaryRecords, secondBinaryRecord)
+				numberOfFragmentation++
+				value = value[newValueSize:]
+				valueSize = valueSize - newValueSize
+			} else { //ako je i kljuc i vrednost manji od maksimalne velicine bloka
+				walRecord := CreateFragmentedWalRecord(key, value, numberOfFragmentation)
+				binaryRecord = walRecord.CreateFragmentedBinaryRecord()
+				binaryRecords = append(binaryRecords, binaryRecord)
+				break
 			}
-		} else { //ako je kljuc manji od pocetnog bloka a vrednost veca od pocetnog bloka
-			newKeySize := keySize
 
-			newValueSize := int(constMaxSize) - int(newKeySize)
-
-			newKey := key
-
-			newValue := value[:newValueSize]
-
-			firstWalRecord := CreateWalRecord(tombstone, newKey, newValue, 1)
-			firstBinaryRecord := firstWalRecord.CreateBinaryRecord()
-
-			binaryRecords = append(binaryRecords, firstBinaryRecord)
-
-			if valueSize-uint64(newValueSize) > uint64(fragmentedConstMaxSize) { //ako je ostatak vrednosti veci od fragmentisanog bloka
-				newValue = value[constMaxSize:]
-
-				newKey = ""
-
-				secondWalRecord := CreateFragmentedWalRecord(newKey, newValue, 2)
-				secondBinaryRecord := secondWalRecord.CreateFragmentedBinaryRecord()
-
-				binaryRecords = append(binaryRecords, secondBinaryRecord)
-
-				newValue = value[constMaxSize:]
-
-				thirdWalRecord := CreateFragmentedWalRecord(newKey, newValue, 3)
-				thirdBinaryRecord := thirdWalRecord.CreateFragmentedBinaryRecord()
-
-				binaryRecords = append(binaryRecords, thirdBinaryRecord)
-
-			} else { //ako je ostatak vrednosti manji od fragmentisanog bloka nece biti treceg zapisa
-				newValue = value[newValueSize:]
-
-				newKey = ""
-
-				secondWalRecord := CreateFragmentedWalRecord(newKey, newValue, 2)
-				secondBinaryRecord := secondWalRecord.CreateFragmentedBinaryRecord()
-
-				binaryRecords = append(binaryRecords, secondBinaryRecord)
-			}
+			firstFragmentation = false
 		}
 	}
 
@@ -464,7 +408,10 @@ func ReadAllRecords(block []byte, blockSize int64) []WalRecord { //funkcija koja
 		readCRC := CRC32(readCRCData)
 
 		if readCRC != crc {
-			log.Fatal("CRC32 check failed")
+			log.Print("CRC32 vrednost nije ispravna, zapis je korumpiran")
+			log.Print("Ovaj zapis je preskocen")
+			i += int64(size) //preskacem ovaj zapis
+			continue
 		}
 
 		newWalRecord := WalRecord{

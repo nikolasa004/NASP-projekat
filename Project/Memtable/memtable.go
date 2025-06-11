@@ -76,7 +76,6 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 	currTable := &table.tables[table.activeTable]
 	currTableSegments := (*currTable).GetLinkedSegments()
 	for _, currSegment := range currSegments {
-		fmt.Println("Current segment: ", currSegment)
 
 		//provera da li je segment vec povezan sa tabelom
 		contains := false
@@ -126,7 +125,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 		blockManager.DeleteSegments(len((*table).GetLinkedSegments()) - 1)
 	}
 
-	//ovo je lista za Bjelicu za SStable
+	//ovo je lista za SStable
 	listOfRecords := make([]*MemtableRecord, 0)
 	fmt.Println("FLUSHING TABLE")
 	for record := range (*table).Iterator() {
