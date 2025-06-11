@@ -1,17 +1,17 @@
 {
-    "BlockManager":{
-        "blocksInSegment":10,
-        "blockSize":1024,
-        "cacheSize":10
-    },
-    "Memtable": {
-        "implementType": "SkipList",
-        "numOfTables": 1,
-        "tableSize": 3
-    },
-    "SsTableManager":{
-     "summarySampleRate":2,
-     "oneFile":true,
-     "compresion":false   
-    }
+  "BlockManager": {
+    "blocksInSegment": 10,
+    "blockSize": 1024,
+    "cacheSize": 10
+  },
+  "Memtable": {
+    "implementType": "SkipList",
+    "numOfTables": 10,
+    "tableSize": 10
+  },
+  "SSTableManager": {
+    "summarySampleRate": 10,
+    "oneFile": true,
+    "compresion": false
+  }
 }

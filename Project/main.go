@@ -14,36 +14,19 @@ func main() {
 	// bira se neka od metoda GET, PUT, DELETE
 	// od svake operacije se pravi zapis
 
-	config, err := config.ReadConfig("config/config.json")
+	config := config.ReadConfig()
 
-	//WAL
-	blockSize := 1024
-	blocksPerSegment := 10
-	cacheSize := 10
+	blockSize := config.BlockManager.BlockSize
+	blocksPerSegment := config.BlockManager.BlocksInSegment
+	cacheSize := config.BlockManager.CacheSize
 
-	//Memtable
-	implementType := "SkipList"
-	numOfTables := 10
-	tableSize := 10
+	implementType := config.Memtable.ImplementType
+	numOfTables := config.Memtable.NumOfTables
+	tableSize := config.Memtable.TableSize
 
-	//SSTable
-	summarySampleRate := 10
-	oneFile := true
-	// compression := false
-
-	if err != nil {
-		fmt.Println("Greska pri citanju konfiguracionog fajla")
-	} else {
-		blockSize = config.BlockManager.BlockSize
-		blocksPerSegment = config.BlockManager.BlocksInSegment
-		cacheSize = config.BlockManager.CacheSize
-		implementType = config.Memtable.ImplementType
-		numOfTables = config.Memtable.NumOfTables
-		tableSize = config.Memtable.TableSize
-		summarySampleRate = config.SSTableManager.SummarySampleRate
-		oneFile = config.SSTableManager.OneFile
-		// compression = config.SSTableManager.Compresion
-	}
+	summarySampleRate := config.SSTableManager.SummarySampleRate
+	oneFile := config.SSTableManager.OneFile
+	// compression := config.SSTableManager.Compresion
 
 	walPath := "BlockManager/wal"
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, cacheSize, walPath)
