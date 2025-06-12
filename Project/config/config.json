@@ -1,12 +1,12 @@
 {
     "BlockManager":{
-        "blocksInSegment":10,
-        "blockSize":1024,
+        "blocksInSegment": 10,
+        "blockSize": 1024,
         "cacheSize":10
     },
     "Memtable": {
         "implementType": "SkipList",
-        "numOfTables": 1,
+        "numOfTables": 3,
         "tableSize": 3
     },
     "SsTableManager":{

@@ -6,7 +6,8 @@ import (
 	"math"
 	"os"
 	"project/BlockManager"
-	"project/sstable"
+
+	// "project/sstable"
 	"sort"
 	"time"
 )
@@ -57,26 +58,39 @@ func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable
 	return memtable
 }
 
-func (table *Memtable) GetRecord(kljuc string) *MemtableRecord {
+func (table *Memtable) Reconstruct(blockManager *BlockManager.BlockManager) ([][]*MemtableRecord, bool) {
+    reconstructRecs := blockManager.Reconstruct()
+    var allFlushedRecords [][]*MemtableRecord
+    for _, record := range reconstructRecs {
+        rec := table.CreateRecord(record.Tombstone, record.Key, record.Value)
+        flushedRecords, flushed := table.PutRecord(rec, blockManager, blockManager.GetRecordSegments()[record.Key])
+        if flushed {
+            allFlushedRecords = append(allFlushedRecords, flushedRecords)
+        }
+    }
+    return allFlushedRecords, len(allFlushedRecords) > 0
+}
+
+func (table *Memtable) GetRecord(kljuc string) (*MemtableRecord, bool) {
 	currTable := table.activeTable
 	for i := 0; i < table.numOfTables; i++ {
 		if table.tables[currTable].GetState() != "empty" {
 			record := table.tables[currTable].FindRecord(kljuc)
 			if record != nil && !record.Tombstone {
-				return record
+				return record, true
 			}
 		}
 		currTable = (currTable - 1 + table.numOfTables) % table.numOfTables
 	}
 
-	return nil
+	return nil, false
 }
 
-func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockManager.BlockManager, currSegments []int, oneFile bool, sampleRate int) {
+func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockManager.BlockManager, currSegments []int) ([]*MemtableRecord, bool) {
 	currTable := &table.tables[table.activeTable]
 	currTableSegments := (*currTable).GetLinkedSegments()
 	for _, currSegment := range currSegments {
-		fmt.Println("Current segment: ", currSegment)
+		fmt.Println("MEM - Current segment: ", currSegment)
 
 		//provera da li je segment vec povezan sa tabelom
 		contains := false
@@ -93,42 +107,35 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 	}
 
 	(*currTable).AddRecord(record)
+	fmt.Println("MEM - record added :",record.Key)
 
 	if (*currTable).GetLength() >= table.tableSize {
 		(*currTable).SetState("full")
 		table.activeTable = (table.activeTable + 1) % table.numOfTables
 		(*currTable).SetLastBlockPosition(blockManager.GetCurrentBlock())
+		fmt.Println("Prva korisna nakon flushovanja ove tabele:",blockManager.GetCurrentBlock())
 
 		currTable = &table.tables[table.activeTable]
 		if (*currTable).GetState() == "empty" {
 			(*currTable).SetState("active")
-			return
+			return nil, false
 		}
 		records := table.flushTable(currTable, blockManager)
-		sstableRecords := make([]sstable.DataRecord, len(records))
-		//sada treba da se napravi sstable
-		for i, record := range records {
-			rec := ConvertFromMemtableRecord(record)
-			sstableRecords[i] = rec
-		}
-		sstable.WriteSstable(sstableRecords, sampleRate, false, oneFile)
 		(*currTable).SetState("active")
+		return records, true
 	}
-}
-
-func ConvertFromMemtableRecord(record *MemtableRecord) sstable.DataRecord {
-	rec := sstable.NewRecord(record.Key, record.Value, record.Tombstone, record.Timestamp)
-	return rec
+	return nil, false
 }
 
 func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockManager) []*MemtableRecord {
 	if len((*table).GetLinkedSegments()) > 1 {
 		blockManager.DeleteSegments(len((*table).GetLinkedSegments()) - 1)
 	}
-
+	fmt.Println("MEM - FLUSHING TABLE")
+	fmt.Println("MEM- brisem prvih ",len((*table).GetLinkedSegments()) - 1," segmenata")
 	//ovo je lista za Bjelicu za SStable
 	listOfRecords := make([]*MemtableRecord, 0)
-	fmt.Println("FLUSHING TABLE")
+	
 	for record := range (*table).Iterator() {
 		fmt.Println(record.Key + "-" + string(record.Value))
 		listOfRecords = append(listOfRecords, record)
@@ -151,7 +158,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 	}
 
 	defer file.Close()
-
+	fmt.Println("MEM - prvi korisni blok: ",(*table).GetLastBlockPosition() )
 	file.Seek(12, 0)
 	header := make([]byte, 4)
 	binary.LittleEndian.PutUint32(header, uint32((*table).GetLastBlockPosition()))

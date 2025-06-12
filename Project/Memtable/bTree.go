@@ -160,16 +160,16 @@ func (t *Tree) rotateNode(node *TreeNode) bool {
 	my_pos, sib_pos, sibling := t.findRotationSibling(node)
 
 	if sibling != nil {
-		if my_pos == 0 {
-			parent.addKey(node.values[len(node.values)-1])
-			node.removeKey(len(node.values) - 1)
-		} else if my_pos == len(parent.children)-1 {
+		if sib_pos < my_pos {
+			// Sibling je levo od moje pozicije, pomeram prvi u roditelja
 			parent.addKey(node.values[0])
 			node.removeKey(0)
 		} else {
+			// Sibling je desno od moje pozicije, pomeram poslednji u roditelja
 			parent.addKey(node.values[len(node.values)-1])
 			node.removeKey(len(node.values) - 1)
 		}
+		// Pomeram iz roditelja u siblinga
 		if sib_pos == 0 {
 			sibling.addKey(parent.values[0])
 			parent.removeKey(0)
@@ -206,7 +206,7 @@ func (t *Tree) splitNode(node *TreeNode) *TreeNode {
 		return newRoot
 	} else {
 		parent := node.parent
-		//split node on two, then add middle key to parent node, and add new node to parent children
+		//dodaj srednji kljuc u roditeljski cvor, podeli trenutni cvor na dva dela
 		pos := parent.addKey(node.values[len(node.values)/2])
 		newNode := newNode(t.m, node.values[len(node.values)/2+1:], parent)
 		node.keys = node.keys[:len(node.keys)/2]
@@ -230,7 +230,7 @@ func (t *Tree) findNode(key string) (*TreeNode, int) {
 	var found_node *TreeNode = nil
 	node_position := -1
 	if len(curr_node.keys) == 0 {
-		return curr_node, -1
+		return curr_node, node_position
 	}
 	for {
 		for i, k := range curr_node.keys {
@@ -296,117 +296,3 @@ func (t *Tree) inorder(node *TreeNode, ch chan<- *MemtableRecord) {
 		}
 	}
 }
-
-//brisanje nije potrebno za memtable jer se radi preko tombstone-a
-// func (t *Tree) RemoveRecord(key string) {
-// 	node, index := t.findNode(key)
-
-// 	if node == nil {
-// 		return
-// 	} else if len(node.children) != 0 {
-// 		node, index = t.ReplaceSuccessor(node, index)
-// 	}
-// 	node.removeKey(index)
-// 	for len(node.keys) < t.m/2-1 {
-// 		borrow_i := t.FindBorrowSibling(node)
-// 		if borrow_i != -1 {
-// 			t.BorrowKey(node, index, borrow_i)
-// 			return
-// 		} else {
-// 			node = t.MergeNode(node, index)
-// 		}
-// 	}
-// }
-
-// func (t *Tree) replaceSuccessor(node *TreeNode, index int) (*TreeNode, int) {
-// 	var found_node *TreeNode = nil
-// 	for len(found_node.children) > 0 {
-// 		found_node = found_node.children[0]
-// 	}
-// 	node.keys[index] = found_node.keys[0]
-// 	node.values[index] = found_node.values[0]
-// 	found_node.keys[0] = node.keys[index]
-// 	found_node.values[0] = node.values[index]
-// 	return found_node, 0
-// }
-
-// func (t *Tree) mergeNode(node *TreeNode, node_index int) *TreeNode {
-// 	parent := node.parent
-// 	var sibling *TreeNode = nil
-// 	if node_index == 0 {
-// 		sibling = parent.children[1]
-
-// 		sibling.addKey(parent.values[0])
-// 		for _, v := range node.values {
-// 			sibling.addKey(v)
-// 		}
-
-// 		parent.removeKey(0)
-// 		parent.children = append(parent.children[:0], parent.children[1:]...)
-// 		for _, c := range parent.children {
-// 			c.parent = parent
-// 		}
-// 		if len(node.children) > 0 {
-// 			//add children of node to sibling at beginning
-// 			for _, c := range node.children {
-// 				sibling.insertChild(0, c)
-// 			}
-// 			for _, c := range sibling.children {
-// 				c.parent = sibling
-// 			}
-// 		}
-// 	} else {
-// 		sibling = parent.children[node_index-1]
-
-// 		sibling.addKey(parent.values[node_index-1])
-// 		for _, v := range node.values {
-// 			sibling.addKey(v)
-// 		}
-
-// 		parent.removeKey(node_index - 1)
-// 		parent.children = append(parent.children[:node_index], parent.children[node_index+1:]...)
-// 		for _, c := range parent.children {
-// 			c.parent = parent
-// 		}
-// 		if len(node.children) > 0 {
-// 			sibling.children = append(sibling.children, node.children...)
-// 			for _, c := range sibling.children {
-// 				c.parent = sibling
-// 			}
-// 		}
-// 	}
-
-// 	return parent
-// }
-
-// func (t *Tree) borrowKey(node *TreeNode, index int, borrow_i int) {
-// 	parent := node.parent
-// 	for borrow_i < index {
-// 		borrow_node := parent.children[borrow_i]
-// 		curr_node := parent.children[borrow_i+1]
-// 		curr_node.addKey(parent.values[borrow_i])
-// 		parent.keys[borrow_i] = borrow_node.keys[len(borrow_node.keys)-1]
-// 		parent.values[borrow_i] = borrow_node.values[len(borrow_node.values)-1]
-// 		borrow_node.removeKey(len(borrow_node.keys) - 1)
-// 		borrow_i++
-// 	}
-// 	for borrow_i > index {
-// 		borrow_node := parent.children[borrow_i]
-// 		curr_node := parent.children[borrow_i-1]
-// 		curr_node.addKey(parent.values[borrow_i-1])
-// 		parent.keys[borrow_i-1] = borrow_node.keys[0]
-// 		parent.values[borrow_i-1] = borrow_node.values[0]
-// 		borrow_node.removeKey(0)
-// 		borrow_i--
-// 	}
-// }
-
-// func (t *Tree) findBorrowSibling(node *TreeNode) int {
-// 	parent := node.parent
-// 	for i, n := range parent.children {
-// 		if len(n.keys) > t.m/2-1 {
-// 			return i
-// 		}
-// 	}
-// 	return -1
-// }

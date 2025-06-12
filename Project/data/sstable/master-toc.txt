@@ -1,7 +1,0 @@
-sstable-0001
-sstable-0002
-sstable-0003
-sstable-0004
-sstable-0005
-sstable-0006
-sstable-0007
