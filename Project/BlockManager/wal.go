@@ -304,10 +304,15 @@ func (walRecord *WalRecord) CreateFragmentedBinaryRecord() []byte { //funkcija k
 	return bytesRecord
 }
 
-func ReadAllRecords(block []byte, blockSize int64) []WalRecord { //funkcija koja cita sve zapise iz jednog bloka
+func ReadAllRecords(block []byte, blockSize int64, isHeaderBlock bool) []WalRecord { //funkcija koja cita sve zapise iz jednog bloka
 	records := []WalRecord{}
 
+	if isHeaderBlock {
+		blockSize -= 16 //ako je header blok, onda treba da se oduzmu 16 bajtova za header
+	}
+
 	i := int64(0)
+
 	for i < blockSize {
 		if i+int64(CRC_SIZE+SIZE_SIZE+TYPE_SIZE+TIMESTAMP_SIZE+TOMBSTONE_SIZE+KEY_SIZE_SIZE+VALUE_SIZE_SIZE) > blockSize { //provera da nije padding
 			break
