@@ -1,10 +1,8 @@
 package Memtable
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
-	"os"
 	"project/BlockManager"
 
 	// "project/sstable"
@@ -148,24 +146,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 
 	(*table).Clear() //brisem sve iz tabele
 
-	// menjam prvi korisni blok u segmentu
-	segment := blockManager.GetSegments()[0]
-
-	file, err := os.OpenFile(segment, os.O_WRONLY, 0644)
-
-	if err != nil {
-		panic(err)
-	}
-
-	defer file.Close()
-	fmt.Println("MEM - prvi korisni blok: ",(*table).GetLastBlockPosition() )
-	file.Seek(12, 0)
-	header := make([]byte, 4)
-	binary.LittleEndian.PutUint32(header, uint32((*table).GetLastBlockPosition()))
-	_, err = file.Write(header)
-	if err != nil {
-		panic(err)
-	}
+	blockManager.UpdateWalStart((*table).GetLastBlockPosition())
 
 	return listOfRecords
 }

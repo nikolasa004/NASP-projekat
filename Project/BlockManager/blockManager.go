@@ -524,3 +524,23 @@ func (blockManager *BlockManager) FlushUnsaved() { //funkcija koja upisuje sve n
 		blockManager.writeBlock(block, blockManager.blockSize)
 	}
 }
+
+func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // menjam prvi korisni blok u segmentu nakon flusha
+	segment := blockManager.GetSegments()[0]
+
+	file, err := os.OpenFile(segment, os.O_WRONLY, 0644)
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer file.Close()
+	fmt.Println("MEM - prvi korisni blok: ",startBlock )
+	file.Seek(12, 0)
+	header := make([]byte, 4)
+	binary.LittleEndian.PutUint32(header, uint32(startBlock))
+	_, err = file.Write(header)
+	if err != nil {
+		panic(err)
+	}
+}
