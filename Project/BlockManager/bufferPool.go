@@ -33,13 +33,10 @@ func (bufferPool *BufferPool) updateLRU(key string) { //funkcija koja azurira li
 }
 
 func (bufferPool *BufferPool) Get(key string) []byte { //funkcija koja vraca vrednost iz bafer pool-a za zadati kljuc ili nil ako kljuc ne postoji
-	value, exists := bufferPool.Buffer[key]
+	value := bufferPool.Buffer[key]
 
-	if exists {
-		bufferPool.updateLRU(key)
-		return value
-	}
-	return nil
+	bufferPool.updateLRU(key)
+	return value
 }
 
 func (bufferPool *BufferPool) deleteBlock(key string) { //funkcija koja brise zapis iz bafer pool-a
@@ -53,13 +50,16 @@ func (bufferPool *BufferPool) deleteBlock(key string) { //funkcija koja brise za
 	}
 }
 
-func (bufferPool *BufferPool) Put(key string, value []byte, newBlock bool) []byte { //funkcija koja dodaje novi zapis u bafer pool
+func (bufferPool *BufferPool) Put(key string, value []byte, newBlock bool) ([]byte, string) { //funkcija koja dodaje novi zapis u bafer pool
 	var blockForFlush []byte
+	var keyToFlush string
 	if len(bufferPool.Buffer) == bufferPool.maxSize {
 		if bufferPool.dirtyBlocks[bufferPool.lruList[0]] {
 			blockForFlush = bufferPool.Buffer[bufferPool.lruList[0]]
+			keyToFlush = bufferPool.lruList[0]
 			bufferPool.dirtyBlocks[bufferPool.lruList[0]] = false
 		}
+
 		bufferPool.deleteBlock(bufferPool.lruList[0])
 	}
 
@@ -71,13 +71,12 @@ func (bufferPool *BufferPool) Put(key string, value []byte, newBlock bool) []byt
 	}
 	bufferPool.lruList = append(bufferPool.lruList, key)
 
-	return blockForFlush
+	return blockForFlush, keyToFlush
 }
 
 func (bufferPool *BufferPool) Update(key string, value []byte) { //funkcija koja azurira postojeci zapis u bafer pool-u
 	bufferPool.Buffer[key] = value
 	bufferPool.dirtyBlocks[key] = true
-	bufferPool.updateLRU(key)
 }
 
 func (bufferPool *BufferPool) Flush() map[string][]byte { //funkcija koja vraca sve promenjene zapise iz bafer pool-a
