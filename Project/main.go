@@ -8,6 +8,7 @@ import (
 	"project/Memtable"
 	"project/config"
 	"project/sstable"
+	"strconv"
 )
 
 func main() {
@@ -50,14 +51,17 @@ func main() {
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
 		var operacija string
-		// scanner.Scan()
-		// operacija = scanner.Text()
-		if pomocnik > 1 {
-			operacija = "PUT" // za testiranje, moze se menjati na GET ili DELETE
+		scanner.Scan()
+		operacija = scanner.Text()
+		if pomocnik > 0 && operacija == "PUT"{
 			pomocnik--
-		} else {
-			operacija = "/"
 		}
+		// if pomocnik > 1 {
+		// 	operacija = "PUT" // za testiranje, moze se menjati na GET ili DELETE
+		// 	pomocnik--
+		// } else {
+		// 	operacija = "/"
+		// }
 		if operacija == "GET" {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
@@ -81,7 +85,7 @@ func main() {
 			// fmt.Println("Unesite vrednost: ")
 			// scanner.Scan()
 			// vrednost := scanner.Text()
-			kljuc := "key1"
+			kljuc := "key" + strconv.Itoa(pomocnik)
 
 			var filename string
 			switch pomocnik {
@@ -99,6 +103,8 @@ func main() {
 				filename = "primer5.txt"
 			case 1:
 				filename = "primer6.txt"
+			case 0:
+				continue
 			}
 
 			file, err := os.ReadFile(filename)
@@ -114,7 +120,7 @@ func main() {
 			}
 			record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
 			fmt.Println("SS - One file: ", oneFile)
-			flushedRecords, flushed := memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()})
+			flushedRecords, flushed := memtable.PutRecord(record, blockManager, len(blockManager.GetSegments()) - 1)
 			if flushed {
 				// ovde bjelica treba da napravi funkciju u koju ce da spakuje ovu logiku
 				sstableRecords := make([]sstable.DataRecord, len(flushedRecords))
@@ -136,7 +142,7 @@ func main() {
 				blockManager.PutRecord(record)
 			}
 			record := memtable.CreateRecord(true, kljuc, []byte(""))
-			flushedRecords, flushed := memtable.PutRecord(record, blockManager, []int{blockManager.GetCurrentSegment()})
+			flushedRecords, flushed := memtable.PutRecord(record, blockManager, len(blockManager.GetSegments()) - 1)
 			if flushed {
 				// ovde bjelica treba da napravi funkciju u koju ce da spakuje ovu logiku
 				sstableRecords := make([]sstable.DataRecord, len(flushedRecords))

@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"log"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -15,12 +14,11 @@ type BlockManager struct {
 	blockSize               int
 	blocksPerSegment        int //blokova po segmentu u wal-u
 	bufferPool              *BufferPool
-	currentSegment          int
+	// currentSegment          int
 	currentBlock            int              // trenutni segment i blok u wal-u
 	walPath                 string           //putanja do wal foldera
 	segments                []string         //lista segmenata
 	orderOfSegments         map[int]int      //redosled segmenata, kljuc je indeks u sortiranoj listi, vrednost je pravi broj segmenta jer ne mora da prvi bude 0 posle brisanja
-	recordSegments          map[string][]int //mapira u kom segmentu je koji zapis
 	differentConfigSegments map[string][]int //segmenti koji imaju drugaciju konfiguraciju od trenutne
 }
 
@@ -32,16 +30,12 @@ func (blockManager *BlockManager) GetSegments() []string {
 	return blockManager.segments
 }
 
-func (blockManager *BlockManager) GetCurrentSegment() int {
-	return blockManager.currentSegment
-}
+// func (blockManager *BlockManager) GetCurrentSegment() int {
+// 	return blockManager.currentSegment
+// }
 
 func (blockManager *BlockManager) GetCurrentBlock() int {
 	return blockManager.currentBlock
-}
-
-func (blockManager *BlockManager) GetRecordSegments() map[string][]int {
-	return blockManager.recordSegments
 }
 
 func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { //konstruktor za BlockManager
@@ -61,7 +55,7 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 
 	segments := make([]string, 0)
 
-	var currentSegment int
+	// var currentSegment int
 	var currentBlock int
 	orderOfSegments := make(map[int]int)
 	differentConfigSegments := make(map[string][]int)
@@ -92,7 +86,7 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 
 		file.Close()
 
-		currentSegment = 0
+		// currentSegment = 0
 		currentBlock = 0
 
 		orderOfSegments[0] = 0
@@ -156,23 +150,22 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 		blockSize:               blockSize,
 		blocksPerSegment:        blocksPerSegment,
 		bufferPool:              &bufferPool,
-		currentSegment:          currentSegment,
+		// currentSegment:          currentSegment,
 		currentBlock:            currentBlock,
 		walPath:                 walPath,
 		segments:                segments,
 		orderOfSegments:         orderOfSegments,
-		recordSegments:          make(map[string][]int),
 		differentConfigSegments: differentConfigSegments,
 	}
 }
 
-func (blockManager *BlockManager) Reconstruct() []WalRecord { //funkcija koja podize sistem i rekonstruise stanje
+func (blockManager *BlockManager) Reconstruct() ([]WalRecord,map[string]int) { //funkcija koja podize sistem i rekonstruise stanje
 	fullSegment := false
 	endOfLastSegment := false
 	fullRecords := []WalRecord{}
 	fragmentedParts := []WalRecord{}
 	currentFragmentedPosition := 1
-	recordSegments := make(map[string][]int) //mapira kljuc recorda na listu segmenata u kojima se nalazi
+	recordSegments := make(map[string]int) //mapira kljuc recorda na listu segmenata u kojima se nalazi
 
 	i := 0 //brojac segmenata
 	var lastSegment string
@@ -201,12 +194,12 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord { //funkcija koja po
 		fullSegment = true
 
 		blockManager.currentBlock = 0
-		blockManager.currentSegment++
+		// blockManager.currentSegment++
 		i++
 	}
 
 	if fullSegment {
-		blockManager.currentSegment--
+		// blockManager.currentSegment--
 		blockManager.currentBlock = blockManager.blocksPerSegment
 	}
 
@@ -237,18 +230,10 @@ func (blockManager *BlockManager) Reconstruct() []WalRecord { //funkcija koja po
 
 		fullRecords = append(fullRecords, fullRecord)
 	}
-	blockManager.recordSegments = recordSegments
-	// i = 0 //ispisivanje za testiranje, da se vidi da li je sve dobro rekonstruisano
-	// for _, record := range fullRecords {
-	// 	value := string(record.Value)
-	// 	println(i, " - ", value)
-	// 	os.WriteFile("reconstructed_record_"+strconv.Itoa(i)+".txt", []byte(value), 0644)
-	// 	i++
-	// }
-	return fullRecords
+	return fullRecords, recordSegments
 }
 
-func (blockManager *BlockManager) ProcessWalSegment(blocksPerSegment, blockSize, i int, segment string, fullRecords, fragmentedParts *[]WalRecord, currentFragmentedPosition *int, recordSegments *map[string][]int) (bool, []byte) {
+func (blockManager *BlockManager) ProcessWalSegment(blocksPerSegment, blockSize, i int, segment string, fullRecords, fragmentedParts *[]WalRecord, currentFragmentedPosition *int, recordSegments *map[string]int) (bool, []byte) {
 	endOfLastSegment := false
 	var lastBlock []byte
 	var firstHeaderBlock []byte
@@ -281,19 +266,7 @@ func (blockManager *BlockManager) ProcessWalSegment(blocksPerSegment, blockSize,
 			records := ReadAllRecords(block, int64(blockSize), isHeaderBlock)
 
 			for _, record := range records {
-				segmentList, ok := (*recordSegments)[record.Key]
-				//moguce je da je zapis fragmentovan i da se nalazi u vise delova, zato imamo listu segmenata, vezno za memtable
-				if !ok {
-					segmentList = []int{}
-					segmentList = append(segmentList, i)
-					(*recordSegments)[record.Key] = segmentList
-				} else {
-					contains := slices.Contains(segmentList, i)
-					if !contains {
-						segmentList = append(segmentList, i)
-						(*recordSegments)[record.Key] = segmentList
-					}
-				}
+				(*recordSegments)[record.Key] = i
 
 				if record.Type == 0 {
 					if len(*fragmentedParts) > 0 { //ako imamo fragmentovane delove, treba ih spojiti u jedan zapis
@@ -457,7 +430,8 @@ func (blockManager *BlockManager) WriteBlock(value []byte, seekValue, blockNumbe
 }
 
 func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja dodaje novi zapis
-	key := blockManager.segments[blockManager.currentSegment] + "-" + strconv.Itoa(blockManager.currentBlock)
+	lastSegment := blockManager.segments[len(blockManager.segments)-1]
+	key := lastSegment + "-" + strconv.Itoa(blockManager.currentBlock)
 
 	check := blockManager.bufferPool.Check(key)
 
@@ -473,7 +447,7 @@ func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja doda
 		} else {
 			isHeaderBlock = false
 		}
-		block = blockManager.GetWalBlock(blockManager.segments[blockManager.currentSegment], blockManager.currentBlock, blockManager.blockSize, isHeaderBlock)
+		block = blockManager.GetWalBlock(lastSegment, blockManager.currentBlock, blockManager.blockSize, isHeaderBlock)
 	}
 
 	if len(block)+len(value) <= blockManager.blockSize {
@@ -498,14 +472,15 @@ func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja doda
 		var newBlock []byte
 		if blockManager.currentBlock == blockManager.blocksPerSegment {
 			blockManager.currentBlock = 0
-			blockManager.currentSegment++
+			// blockManager.currentSegment++
 
 			newBlock = blockManager.CreateNewSegment()
+			lastSegment = blockManager.segments[len(blockManager.segments)-1]
 			if len(newBlock)+len(value) > blockManager.blockSize {
 				paddingSize := blockManager.blockSize - len(newBlock)
 				padding := make([]byte, paddingSize)
 				newBlock = append(newBlock, padding...)
-				key = blockManager.segments[blockManager.currentSegment] + "-" + strconv.Itoa(blockManager.currentBlock)
+				key = lastSegment + "-" + strconv.Itoa(blockManager.currentBlock)
 				blockManager.PutBlock(key, newBlock) //upisujemo novi heder blok u bafer ali u njega ne staje nista vise od hedera
 
 				blockManager.currentBlock++
@@ -516,19 +491,28 @@ func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja doda
 			newBlock = make([]byte, 0)
 		}
 
-		key = blockManager.segments[blockManager.currentSegment] + "-" + strconv.Itoa(blockManager.currentBlock)
+		key = lastSegment + "-" + strconv.Itoa(blockManager.currentBlock)
 		newBlock = append(newBlock, value...)
 		blockManager.PutBlock(key, newBlock)
 	}
 }
 
 func (blockManager *BlockManager) CreateNewSegment() []byte { //funkcija koja kreira novi segment u WAL-u
-	segment := blockManager.walPath + "/wal_" + strconv.Itoa(blockManager.currentSegment) + ".log"
-	blockManager.segments = append(blockManager.segments, segment)
-
-	file, err := os.Create(segment)
+	lastSegment := blockManager.segments[len(blockManager.segments)-1]
+	lastSegmentName := strings.TrimSuffix(lastSegment, ".log")
+	parts := strings.Split(lastSegmentName, "_")
+	lastSegmentNumber,err := strconv.Atoi(parts[len(parts)-1])
 	if err != nil {
-		log.Println("Greska pri kreiranju novog segmenta: ", segment)
+		log.Fatal("Greska: ", err)
+		return nil
+	}
+	newSegmentNumber := lastSegmentNumber + 1
+	newSegment := blockManager.walPath + "/wal_" + strconv.Itoa(newSegmentNumber) + ".log"
+	blockManager.segments = append(blockManager.segments, newSegment)
+
+	file, err := os.Create(newSegment)
+	if err != nil {
+		log.Println("Greska pri kreiranju novog segmenta: ", newSegment)
 		log.Println("Nije moguce nastaviti sa radom")
 		log.Fatal("Greska: ", err)
 		return nil
@@ -537,13 +521,13 @@ func (blockManager *BlockManager) CreateNewSegment() []byte { //funkcija koja kr
 	header := make([]byte, 16)
 	binary.LittleEndian.PutUint32(header[:4], uint32(blockManager.blockSize))
 	binary.LittleEndian.PutUint32(header[4:8], uint32(blockManager.blocksPerSegment))
-	binary.LittleEndian.PutUint32(header[8:12], uint32(blockManager.currentSegment))
+	binary.LittleEndian.PutUint32(header[8:12], uint32(newSegmentNumber))
 	binary.LittleEndian.PutUint32(header[12:16], uint32(0))
 
 	_, err = file.Write(header)
 
 	if err != nil {
-		log.Println("Greska pri pisanju hedera u novi segment: ", segment)
+		log.Println("Greska pri pisanju hedera u novi segment: ", newSegment)
 		log.Println("Nije moguce nastaviti sa radom")
 		log.Fatal("Greska: ", err)
 		return nil
@@ -551,17 +535,37 @@ func (blockManager *BlockManager) CreateNewSegment() []byte { //funkcija koja kr
 
 	file.Close()
 
-	blockManager.orderOfSegments[len(blockManager.segments)-1] = blockManager.currentSegment
+	blockManager.orderOfSegments[len(blockManager.segments)-1] = newSegmentNumber
 
 	return header //vracamo header blok koji je upisan u novi segment
 }
 
+// func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija koja brise segmente iz WAL-a koji se vise ne koriste
+// 	for i := range lowWatermark {
+// 		os.Remove(blockManager.segments[i])
+// 	}
+// 	blockManager.segments = blockManager.segments[lowWatermark:]
+// }
+
+
 func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija koja brise segmente iz WAL-a koji se vise ne koriste
-	for i := range lowWatermark {
+	for i := lowWatermark-1; i >= 0; i-- {
 		os.Remove(blockManager.segments[i])
+		blockManager.segments = append(blockManager.segments[:i], blockManager.segments[i+1:]...)
 	}
-	blockManager.segments = blockManager.segments[lowWatermark:]
 }
+
+// func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija koja brise segmente iz WAL-a koji se vise ne koriste
+// 	watermarkSegment := blockManager.walPath + "/wal_" + strconv.Itoa(lowWatermark) + ".log"
+// 	for i := 0; i < len(blockManager.segments); i++ {
+// 		os.Remove(blockManager.segments[i])
+// 		if blockManager.segments[i] == watermarkSegment {
+// 			blockManager.segments = blockManager.segments[i+1:]
+// 			break
+// 		}
+// 	}
+
+// }
 
 func (blockManager *BlockManager) FlushUnsaved() { //funkcija koja upisuje sve neupisane blokove u WAL
 	blocksForFlush := blockManager.bufferPool.Flush()
@@ -584,7 +588,7 @@ func (blockManager *BlockManager) FlushUnsaved() { //funkcija koja upisuje sve n
 }
 
 func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // menjam prvi korisni blok u segmentu nakon flusha
-	segment := blockManager.GetSegments()[0]
+	segment := blockManager.segments[0]
 
 	file, err := os.OpenFile(segment, os.O_WRONLY, 0644)
 
@@ -593,7 +597,6 @@ func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // menjam prv
 	}
 
 	defer file.Close()
-	fmt.Println("MEM - prvi korisni blok: ",startBlock )
 	file.Seek(12, 0)
 	header := make([]byte, 4)
 	binary.LittleEndian.PutUint32(header, uint32(startBlock))

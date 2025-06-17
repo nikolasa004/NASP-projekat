@@ -63,7 +63,7 @@ type Tree struct {
 	m                 int
 	root              *TreeNode
 	state             string
-	linkedSegments    []int
+	linkedSegment     int
 	lastBlockPosition int
 }
 
@@ -86,6 +86,9 @@ func (t *Tree) GetLength() int {
 func (t *Tree) Clear() {
 	valueArr := make([]*MemtableRecord, 0, t.m)
 	t.root = newNode(t.m, valueArr, nil)
+	t.state = "empty"
+	t.linkedSegment = 0
+	t.lastBlockPosition = 0
 }
 
 func (t *Tree) SetState(state string) {
@@ -96,17 +99,17 @@ func (t *Tree) GetState() string {
 	return t.state
 }
 
-func (t *Tree) GetLinkedSegments() []int {
-	return t.linkedSegments
+func (t *Tree) GetLinkedSegment() int {
+	return t.linkedSegment
 }
 
-func (t *Tree) SetLinkedSegments(segments []int) {
-	t.linkedSegments = segments
+func (t *Tree) SetLinkedSegment(segment int) {
+	t.linkedSegment = segment
 }
 
 func NewTree(m int) *Tree {
 	valueArr := make([]*MemtableRecord, 0, m)
-	return &Tree{m: m, root: newNode(m, valueArr, nil), state: "empty", linkedSegments: make([]int, 0)}
+	return &Tree{m: m, root: newNode(m, valueArr, nil), state: "empty", linkedSegment: 0, lastBlockPosition: 0}
 }
 
 func (t *Tree) AddRecord(newRecord *MemtableRecord) {

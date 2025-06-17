@@ -7,7 +7,7 @@ import (
 type Hashmap struct {
 	records map[string]*MemtableRecord
 	state string
-	linkedSegments []int
+	linkedSegment int
 	lastBlockPosition int
 }
 
@@ -21,7 +21,9 @@ func (m *Hashmap) SetLastBlockPosition(position int) {
 
 func (m *Hashmap) Clear() {
 	m.records = make(map[string]*MemtableRecord)
-	m.linkedSegments = make([]int, 0)
+	m.state = "empty"
+	m.linkedSegment = 0
+	m.lastBlockPosition = 0
 }
 
 
@@ -29,12 +31,12 @@ func (m *Hashmap) GetLength() int {
 	return len(m.records)
 }
 
-func (m *Hashmap) GetLinkedSegments() []int {
-	return m.linkedSegments
+func (m *Hashmap) GetLinkedSegment() int {
+	return m.linkedSegment
 }
 
-func (m *Hashmap) SetLinkedSegments(segments []int) {
-	m.linkedSegments = segments
+func (m *Hashmap) SetLinkedSegment(segment int) {
+	m.linkedSegment = segment
 }
 
 func (m *Hashmap) SetState(state string) {
@@ -46,7 +48,7 @@ func (m *Hashmap) GetState() string {
 }
 
 func NewHashmap() *Hashmap {
-	return &Hashmap{records: make(map[string]*MemtableRecord), state: "empty", linkedSegments: make([]int, 0)}
+	return &Hashmap{records: make(map[string]*MemtableRecord), state: "empty", linkedSegment: 0, lastBlockPosition: 0}
 }
 
 func (m *Hashmap) FindRecord(key string) *MemtableRecord {
