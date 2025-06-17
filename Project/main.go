@@ -70,6 +70,10 @@ func main() {
 			if found {
 				fmt.Println(string(record.Value))
 				continue
+			} else if(record != nil && !found) {
+				//tombstone je false ne gleda se u sstabelu ?
+				fmt.Println("Nema takvog kljuca")
+				continue
 			}
 			SSrecord, found := sstable.FindInSstables(kljuc)
 			if found {
@@ -118,9 +122,9 @@ func main() {
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
-			record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
+			// record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
 			fmt.Println("SS - One file: ", oneFile)
-			flushedRecords, flushed := memtable.PutRecord(record, blockManager, len(blockManager.GetSegments()) - 1)
+			flushedRecords, flushed := memtable.PutRecord(false,kljuc, vrednost, blockManager, len(blockManager.GetSegments()) - 1)
 			if flushed {
 				// ovde bjelica treba da napravi funkciju u koju ce da spakuje ovu logiku
 				sstableRecords := make([]sstable.DataRecord, len(flushedRecords))
@@ -141,8 +145,7 @@ func main() {
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
-			record := memtable.CreateRecord(true, kljuc, []byte(""))
-			flushedRecords, flushed := memtable.PutRecord(record, blockManager, len(blockManager.GetSegments()) - 1)
+			flushedRecords, flushed := memtable.PutRecord(true, kljuc,"", blockManager, len(blockManager.GetSegments()) - 1)
 			if flushed {
 				// ovde bjelica treba da napravi funkciju u koju ce da spakuje ovu logiku
 				sstableRecords := make([]sstable.DataRecord, len(flushedRecords))

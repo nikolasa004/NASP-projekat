@@ -5,7 +5,7 @@
     "cacheSize": 10
   },
   "Memtable": {
-    "implementType": "SkipList",
+    "implementType": "BTree",
     "numOfTables": 2,
     "tableSize": 2
   },

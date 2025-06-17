@@ -1,3 +1,1 @@
 sstable-0001
-sstable-0002
-sstable-0003

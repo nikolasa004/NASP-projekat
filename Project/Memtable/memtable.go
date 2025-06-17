@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"math"
 	"project/BlockManager"
-
-	// "project/sstable"
 	"sort"
 	"time"
 )
@@ -17,8 +15,6 @@ type Table interface {
 	Iterator() <-chan *MemtableRecord
 	GetState() string // empty, active, full
 	SetState(state string)
-	// GetLinkedSegments() []int // lista segmenata koji su povezani sa tabelom
-	// SetLinkedSegments(segments []int)
 	GetLinkedSegment() int // oznaka poslednjeg segmenta wall-a u koji je upisan neki zapis koji je zabelezen u ovoj tabeli
 	SetLinkedSegment(segment int)
 	GetLength() int
@@ -62,8 +58,7 @@ func (table *Memtable) Reconstruct(blockManager *BlockManager.BlockManager) ([][
 	reconstructRecs, recordSegments := blockManager.Reconstruct()
 	var allFlushedRecords [][]*MemtableRecord
 	for _, record := range reconstructRecs {
-		rec := table.CreateRecord(record.Tombstone, record.Key, record.Value)
-		flushedRecords, flushed := table.PutRecord(rec, blockManager, recordSegments[record.Key])
+		flushedRecords, flushed := table.PutRecord(record.Tombstone, record.Key, string(record.Value), blockManager, recordSegments[record.Key])
 		if flushed {
 			allFlushedRecords = append(allFlushedRecords, flushedRecords)
 		}
@@ -76,8 +71,11 @@ func (table *Memtable) GetRecord(kljuc string) (*MemtableRecord, bool) {
 	for i := 0; i < table.numOfTables; i++ {
 		if table.tables[currTable].GetState() != "empty" {
 			record := table.tables[currTable].FindRecord(kljuc)
-			if record != nil && !record.Tombstone {
+			if record != nil && !record.IsTombstone() {
 				return record, true
+			} else if record != nil && record.IsTombstone() {
+				//odmah vracam false?
+				return record, false
 			}
 		}
 		currTable = (currTable - 1 + table.numOfTables) % table.numOfTables
@@ -86,31 +84,23 @@ func (table *Memtable) GetRecord(kljuc string) (*MemtableRecord, bool) {
 	return nil, false
 }
 
-func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockManager.BlockManager, currSegment int) ([]*MemtableRecord, bool) {
+func (table *Memtable) PutRecord(tombstone bool, key string, value string, blockManager *BlockManager.BlockManager, currSegment int) ([]*MemtableRecord, bool) {
 	currTable := &table.tables[table.activeTable]
 	(*currTable).SetLinkedSegment(currSegment)
-	// for _, currSegment := range currSegments {
 
-	// 	//provera da li je segment vec povezan sa tabelom
-	// 	// contains := false
-	// 	// for _, segment := range currTableSegments {
-	// 	// 	if segment == currSegment {
-	// 	// 		contains = true
-	// 	// 		break
-	// 	// 	}
-	// 	// }
-	// 	// if !contains {
-	// 	// 	currTableSegments = append(currTableSegments, currSegment)
-	// 	// 	(*currTable).SetLinkedSegments(currTableSegments)
-	// 	// }
-
-	// }
-
-
-	//dodaj da radis pretragu da vidis da li vec postoji u nekoj tabeli i ako postoji izmenis ga
-	// najvrv cu onda morati jos neke argumente da saljem u ovu funkciju a ne da odmah vani pravim novi rekord
+	foundRecord,found := table.GetRecord(key)
+	if found {
+		//todo menjam samo vrednost i timestamp
+		newTimeStamp := uint64(time.Now().Unix())
+		foundRecord.SetTimestamp(newTimeStamp)
+		foundRecord.SetValue([]byte(value))
+		foundRecord.SetTombstone(tombstone)
+		fmt.Println("MEM - record updated :", foundRecord.Key)
+		return nil, false
+	}
+	record := table.CreateRecord(tombstone , key, []byte(value))
 	(*currTable).AddRecord(record)
-	fmt.Println("MEM - record added :", record.Key)
+	fmt.Println("MEM - record added :", record.GetKey())
 
 	if (*currTable).GetLength() >= table.tableSize {
 		(*currTable).SetState("full")
@@ -131,9 +121,6 @@ func (table *Memtable) PutRecord(record *MemtableRecord, blockManager *BlockMana
 }
 
 func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockManager) []*MemtableRecord {
-	// if len((*table).GetLinkedSegments()) > 1 {
-	// 	blockManager.DeleteSegments(len((*table).GetLinkedSegments()) - 1)
-	// }
 	lowWatermark := (*table).GetLinkedSegment()
 	blockManager.DeleteSegments(lowWatermark)
 
