@@ -294,7 +294,7 @@ func (blockManager *BlockManager) ProcessWalSegment(blocksPerSegment, blockSize,
 					if *currentFragmentedPosition == int(record.Type) {
 						*fragmentedParts = append(*fragmentedParts, record)
 						*currentFragmentedPosition++
-					} else {
+					} else if(*currentFragmentedPosition > int(record.Type)) { //ako je fragmentacija resetovana, treba da spojimo sve delove u jedan zapis
 						*currentFragmentedPosition = 1
 
 						keyBytes := []byte{}
