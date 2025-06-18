@@ -13,18 +13,18 @@ type Table interface {
 	FindRecord(key string) *MemtableRecord
 	AddRecord(record *MemtableRecord)
 	Iterator() <-chan *MemtableRecord
-	GetState() string // empty, active, full
+	GetState() string // stanja tabele - empty, full, active
 	SetState(state string)
 	GetLinkedSegment() int // oznaka poslednjeg segmenta wall-a u koji je upisan neki zapis koji je zabelezen u ovoj tabeli
 	SetLinkedSegment(segment int)
 	GetLength() int
-	GetLastBlockPosition() int // poslednji korisni blok u segmentu
+	GetLastBlockPosition() int // poslednji korisni blok u aktuelnom segmentu ove tabele
 	SetLastBlockPosition(position int)
 	Clear()
 }
 
 type Memtable struct {
-	implementType string
+	implementType string // SkipList, Hashmap ili B-stablo
 	numOfTables   int
 	tableSize     int
 	tables        []Table
@@ -32,6 +32,7 @@ type Memtable struct {
 }
 
 func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable {
+
 	memtable := &Memtable{
 		implementType: implementType,
 		numOfTables:   numOfTables,
@@ -41,6 +42,7 @@ func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable
 	}
 
 	for i := 0; i < numOfTables; i++ {
+
 		switch implementType {
 		case "SkipList":
 			memtable.tables[i] = NewSkipList(int(math.Log2(float64(tableSize))))
@@ -49,20 +51,26 @@ func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable
 		case "BTree":
 			memtable.tables[i] = NewTree(5)
 		}
+
 	}
 	memtable.tables[0].SetState("active")
+
 	return memtable
 }
 
-func (table *Memtable) Reconstruct(blockManager *BlockManager.BlockManager) ([][]*MemtableRecord, bool) {
-	reconstructRecs, recordSegments := blockManager.Reconstruct()
-	var allFlushedRecords [][]*MemtableRecord
+func (table *Memtable) Reconstruct(blockManager *BlockManager.BlockManager) ([][]*MemtableRecord, bool) { // rekonstrukcija tabela zapisima iz Wal-a nakon pokretanja engine-a
+	reconstructRecs, recordSegments := blockManager.Reconstruct() // vraca rekonstruisane zapise i mapu koja mapira te zapise na njihove segmente
+	
+	// dodavanje rekonstruisanih zapisa
+	// moze da dodje do flush-a ako je promenjena konfiguracija
+	var allFlushedRecords [][]*MemtableRecord //skladisti sve flushovane zapise(ako bude vise flush-ova)
 	for _, record := range reconstructRecs {
 		flushedRecords, flushed := table.PutRecord(record.Tombstone, record.Key, string(record.Value), blockManager, recordSegments[record.Key])
 		if flushed {
 			allFlushedRecords = append(allFlushedRecords, flushedRecords)
 		}
 	}
+
 	return allFlushedRecords, len(allFlushedRecords) > 0
 }
 
@@ -71,10 +79,10 @@ func (table *Memtable) GetRecord(kljuc string) (*MemtableRecord, bool) {
 	for i := 0; i < table.numOfTables; i++ {
 		if table.tables[currTable].GetState() != "empty" {
 			record := table.tables[currTable].FindRecord(kljuc)
+
 			if record != nil && !record.IsTombstone() {
 				return record, true
-			} else if record != nil && record.IsTombstone() {
-				//odmah vracam false?
+			} else if record != nil && record.IsTombstone() { // unisten zapis
 				return record, false
 			}
 		}
@@ -86,11 +94,10 @@ func (table *Memtable) GetRecord(kljuc string) (*MemtableRecord, bool) {
 
 func (table *Memtable) PutRecord(tombstone bool, key string, value string, blockManager *BlockManager.BlockManager, currSegment int) ([]*MemtableRecord, bool) {
 	currTable := &table.tables[table.activeTable]
-	(*currTable).SetLinkedSegment(currSegment)
+	(*currTable).SetLinkedSegment(currSegment) // poslednji zapis u tabeli ce uvek biti skladisten u najnoviji segment
 
 	foundRecord,found := table.GetRecord(key)
-	if found {
-		//todo menjam samo vrednost i timestamp
+	if found { // ako postoji zapis dolazi do azuriranja
 		newTimeStamp := uint64(time.Now().Unix())
 		foundRecord.SetTimestamp(newTimeStamp)
 		foundRecord.SetValue([]byte(value))
@@ -98,36 +105,36 @@ func (table *Memtable) PutRecord(tombstone bool, key string, value string, block
 		fmt.Println("MEM - record updated :", foundRecord.Key)
 		return nil, false
 	}
-	record := table.CreateRecord(tombstone , key, []byte(value))
+
+	record := table.createRecord(tombstone , key, []byte(value)) // kreira se novi zapis
 	(*currTable).AddRecord(record)
 	fmt.Println("MEM - record added :", record.GetKey())
 
-	if (*currTable).GetLength() >= table.tableSize {
+	if (*currTable).GetLength() >= table.tableSize { // trenutna tabela je napunjena
 		(*currTable).SetState("full")
-		table.activeTable = (table.activeTable + 1) % table.numOfTables
-		(*currTable).SetLastBlockPosition(blockManager.GetCurrentBlock())
+		(*currTable).SetLastBlockPosition(blockManager.GetCurrentBlock()) // cuvamo poslednji blok vezan za ovu tabelu
+		table.activeTable = (table.activeTable + 1) % table.numOfTables // rotiramo tabele
 		fmt.Println("Prva korisna nakon flushovanja ove tabele:segment-",currSegment,",blok-", blockManager.GetCurrentBlock())
 
 		currTable = &table.tables[table.activeTable]
-		if (*currTable).GetState() == "empty" {
+		if (*currTable).GetState() == "empty" { // ako je nova tabela prazna postaje aktivna
 			(*currTable).SetState("active")
 			return nil, false
 		}
-		records := table.flushTable(currTable, blockManager)
+		records := table.flushTable(currTable, blockManager) // puna tabela pa dolazi do flush-a na SStable
 		(*currTable).SetState("active")
 		return records, true
 	}
 	return nil, false
 }
 
-func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockManager) []*MemtableRecord {
+func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockManager) []*MemtableRecord { // Prazni se tabela u SStable
 	lowWatermark := (*table).GetLinkedSegment()
-	blockManager.DeleteSegments(lowWatermark)
+	blockManager.DeleteSegments(lowWatermark) // brisemo sve segmente do poslednjeg povezanog za ovu tabelu
 
 	fmt.Println("MEM - FLUSHING TABLE")
 	fmt.Println("MEM- brisem ", (*table).GetLinkedSegment(), " segmenata")
-	//ovo je lista za SStable
-	listOfRecords := make([]*MemtableRecord, 0)
+	listOfRecords := make([]*MemtableRecord, 0) // lista zapisa koju cemo proslediti SStable-u
 
 	for record := range (*table).Iterator() {
 		listOfRecords = append(listOfRecords, record)
@@ -138,20 +145,18 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 		return listOfRecords[i].Key < listOfRecords[j].Key
 	})
 
-	// pomeram segmente ostalih tabela
+	// azuriram segmente ostalih tabela
 	for i:= 0; i < t.numOfTables; i++ {
 		t.tables[i].SetLinkedSegment(t.tables[i].GetLinkedSegment() - lowWatermark)
 	}
 	
-	blockManager.UpdateWalStart((*table).GetLastBlockPosition())
+	blockManager.UpdateWalStart((*table).GetLastBlockPosition()) // postavljam prvi koristan blok za novi prvi segment
 
-	(*table).Clear() //brisem sve iz tabele
-
-
+	(*table).Clear() //praznim celu tabelu
 	return listOfRecords
 }
 
-func (table *Memtable) CreateRecord(tombstone bool, kljuc string, vrednost []byte) *MemtableRecord {
+func (table *Memtable) createRecord(tombstone bool, kljuc string, vrednost []byte) *MemtableRecord {
 	timeStamp := uint64(time.Now().Unix())
 	return NewMemtableRecord(kljuc, vrednost, timeStamp, tombstone)
 }

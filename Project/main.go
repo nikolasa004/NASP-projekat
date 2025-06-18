@@ -21,7 +21,7 @@ func main() {
 	blocksPerSegment := config.BlockManager.BlocksInSegment
 	cacheSize := config.BlockManager.CacheSize
 
-	implementType := config.Memtable.ImplementType
+	implementType := config.Memtable.ImplementType // SkipList, Hashmap ili B-stablo
 	numOfTables := config.Memtable.NumOfTables
 	tableSize := config.Memtable.TableSize
 
@@ -32,8 +32,8 @@ func main() {
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, cacheSize)
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
-	flushedReconstructRecords, flushed := memtable.Reconstruct(blockManager) // moguce ako se promeni konfiguracija memtable-a
-	if flushed {
+	flushedReconstructRecords, flushed := memtable.Reconstruct(blockManager) // rekonstrukcija engine-a unosom zapisa iz Wal-a prilikom pokretanja
+	if flushed { // moze da dodje do flush-a ako je promenjena konfiguracija
 		for _, recs := range flushedReconstructRecords {
 			// ovde bjelica treba da napravi funkciju u koju ce da spakuje ovu logiku
 			sstableRecords := make([]sstable.DataRecord, len(recs))
@@ -71,7 +71,6 @@ func main() {
 				fmt.Println(string(record.Value))
 				continue
 			} else if(record != nil && !found) {
-				//tombstone je false ne gleda se u sstabelu ?
 				fmt.Println("Nema takvog kljuca")
 				continue
 			}
@@ -122,7 +121,6 @@ func main() {
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
-			// record := memtable.CreateRecord(false, kljuc, []byte(vrednost))
 			fmt.Println("SS - One file: ", oneFile)
 			flushedRecords, flushed := memtable.PutRecord(false,kljuc, vrednost, blockManager, len(blockManager.GetSegments()) - 1)
 			if flushed {

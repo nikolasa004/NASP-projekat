@@ -3,8 +3,8 @@ package Memtable
 type MemtableRecord struct {
 	Key       string
 	Value     []byte
-	Timestamp uint64
-	Tombstone bool
+	Timestamp uint64 // vreme kada je zapis kreiran
+	Tombstone bool   // bool vrednost koja odredjuje da li je u pitanju izbrisan ili postojeci zapis
 }
 
 func NewMemtableRecord(key string, value []byte, timestamp uint64, tombstone bool) *MemtableRecord {

@@ -19,19 +19,20 @@ func newNode(size int, values []*MemtableRecord, parent *TreeNode) *TreeNode {
 	return &node
 }
 
-func (n *TreeNode) addKey(value *MemtableRecord) int {
-	key := value.Key
+func (n *TreeNode) addKey(value *MemtableRecord) int { // dodaje novi element u cvor i vraca poziciju na koju je dodao
+	newKey := value.Key
+
 	if len(n.keys) == 0 {
-		n.keys = append(n.keys, key)
+		n.keys = append(n.keys, newKey)
 		n.values = append(n.values, value)
 		return 0
 	}
 
 	for i, k := range n.keys {
-		if k > key {
+		if k > newKey {
 			n.keys = append(n.keys, "")
 			copy(n.keys[i+1:], n.keys[i:])
-			n.keys[i] = key
+			n.keys[i] = newKey
 			n.values = append(n.values, nil)
 			copy(n.values[i+1:], n.values[i:])
 			n.values[i] = value
@@ -39,17 +40,19 @@ func (n *TreeNode) addKey(value *MemtableRecord) int {
 		}
 	}
 
-	n.keys = append(n.keys, key)
+	n.keys = append(n.keys, newKey)
 	n.values = append(n.values, value)
 	return len(n.keys) - 1
 }
 
-func (n *TreeNode) removeKey(index int) {
+func (n *TreeNode) removeKey(index int) *MemtableRecord { // uklanja element iz cvora sa odredjene pozicije
+	targetEl := n.values[index]
 	n.keys = append(n.keys[:index], n.keys[index+1:]...)
 	n.values = append(n.values[:index], n.values[index+1:]...)
+	return targetEl
 }
 
-func (n *TreeNode) insertChild(index int, child *TreeNode) {
+func (n *TreeNode) insertChild(index int, child *TreeNode) { // insertuje dete na datu poziciju
 	n.children = append(n.children, nil)
 	if index < len(n.children)-1 {
 		copy(n.children[index+1:], n.children[index:])
@@ -60,8 +63,9 @@ func (n *TreeNode) insertChild(index int, child *TreeNode) {
 }
 
 type Tree struct {
-	m                 int
+	m                 int // maksimalni broj elemenata u cvoru
 	root              *TreeNode
+	size              int
 	state             string
 	linkedSegment     int
 	lastBlockPosition int
@@ -76,16 +80,13 @@ func (t *Tree) SetLastBlockPosition(position int) {
 }
 
 func (t *Tree) GetLength() int {
-	length := 0
-	for range t.Iterator() {
-		length++
-	}
-	return length
+	return t.size
 }
 
 func (t *Tree) Clear() {
 	valueArr := make([]*MemtableRecord, 0, t.m)
 	t.root = newNode(t.m, valueArr, nil)
+	t.size = 0
 	t.state = "empty"
 	t.linkedSegment = 0
 	t.lastBlockPosition = 0
@@ -109,19 +110,21 @@ func (t *Tree) SetLinkedSegment(segment int) {
 
 func NewTree(m int) *Tree {
 	valueArr := make([]*MemtableRecord, 0, m)
-	return &Tree{m: m, root: newNode(m, valueArr, nil), state: "empty", linkedSegment: 0, lastBlockPosition: 0}
+	return &Tree{m: m, root: newNode(m, valueArr, nil), size: 0, state: "empty", linkedSegment: 0, lastBlockPosition: 0}
 }
 
-func (t *Tree) AddRecord(newRecord *MemtableRecord) {
+func (t *Tree) AddRecord(newRecord *MemtableRecord) { // dodaje novi zapis u stablo
 	newKey := newRecord.Key
 	node, i := t.findNode(newKey)
 
-	if i != -1 {
+	if i != -1 { // pronadjen zapis sa ovim kljucem - azurira se
 		t.updateValue(node, i, newRecord)
 		return
 	}
+
 	node.addKey(newRecord)
-	for len(node.keys) == t.m {
+	t.size++
+	for len(node.keys) == t.m { // prekoracili smo maksimalan broj elemenata u cvoru
 		if node != t.root {
 			if t.rotateNode(node) {
 				return
@@ -135,35 +138,37 @@ func (t *Tree) updateValue(node *TreeNode, index int, value *MemtableRecord) {
 	node.values[index] = value
 }
 
-func (t *Tree) findRotationSibling(node *TreeNode) (int, int, *TreeNode) {
+func (t *Tree) findRotationSibling(node *TreeNode) (int, int, *TreeNode) { // trazi siblinga za rotaciju
 	parent := node.parent
-	my_position := -1
-	sibling_position := -1
+	myPosition := -1
+	siblingPosition := -1
 	var sib *TreeNode = nil
 	for i, n := range parent.children {
 		if n == node {
-			my_position = i
-			if sibling_position != -1 {
+			myPosition = i
+			if siblingPosition != -1 {
 				break
 			}
 		}
 		if len(n.keys) < t.m-1 {
-			sibling_position = i
+			siblingPosition = i
 			sib = n
-			if my_position != -1 {
+			if myPosition != -1 {
 				break
 			}
 		}
 	}
-	return my_position, sibling_position, sib
+	return myPosition, siblingPosition, sib
 }
 
+// rasterecujemo trenutni prepunjeni cvor tako sto pomeramo jedan element u roditelja
+// roditelj pomera jedan element u cvor nekog drugog deteta
 func (t *Tree) rotateNode(node *TreeNode) bool {
 	parent := node.parent
-	my_pos, sib_pos, sibling := t.findRotationSibling(node)
+	myPosition, sibPosition, sibling := t.findRotationSibling(node)
 
 	if sibling != nil {
-		if sib_pos < my_pos {
+		if sibPosition < myPosition {
 			// Sibling je levo od moje pozicije, pomeram prvi u roditelja
 			parent.addKey(node.values[0])
 			node.removeKey(0)
@@ -173,15 +178,15 @@ func (t *Tree) rotateNode(node *TreeNode) bool {
 			node.removeKey(len(node.values) - 1)
 		}
 		// Pomeram iz roditelja u siblinga
-		if sib_pos == 0 {
+		if sibPosition == 0 {
 			sibling.addKey(parent.values[0])
 			parent.removeKey(0)
-		} else if sib_pos == len(parent.children)-1 {
+		} else if sibPosition == len(parent.children)-1 {
 			sibling.addKey(parent.values[len(parent.values)-1])
 			parent.removeKey(len(parent.values) - 1)
 		} else {
-			sibling.addKey(parent.values[sib_pos])
-			parent.removeKey(sib_pos)
+			sibling.addKey(parent.values[sibPosition])
+			parent.removeKey(sibPosition)
 		}
 		return true
 	} else {
@@ -189,6 +194,8 @@ func (t *Tree) rotateNode(node *TreeNode) bool {
 	}
 }
 
+// pomeramo jedan od elemenata u roditeljski cvor i onda se pocetni cvor deli na dva dela
+// to radimo ili dok roditeljski cvor vise ne mora da se deli ili dok ne dodjemo do korena
 func (t *Tree) splitNode(node *TreeNode) *TreeNode {
 	if node == t.root {
 		newRoot := newNode(t.m, []*MemtableRecord{node.values[len(node.values)/2]}, nil)
@@ -198,7 +205,7 @@ func (t *Tree) splitNode(node *TreeNode) *TreeNode {
 		node.parent = newRoot
 		newRoot.children = append(newRoot.children, node, newNode)
 		t.root = newRoot
-		//split old children of node between new and old node
+		//podeli i decu podeljenog cvora
 		if len(node.children) > 0 {
 			newNode.children = append(newNode.children, node.children[len(node.children)/2+1:]...)
 			for _, c := range newNode.children {
@@ -216,7 +223,7 @@ func (t *Tree) splitNode(node *TreeNode) *TreeNode {
 		node.values = node.values[:len(node.values)/2]
 		node.parent = parent
 		parent.insertChild(pos+1, newNode)
-		//split old children of node between new and old node
+		//podeli i decu podeljenog cvora
 		if len(node.children) > 0 {
 			newNode.children = append(newNode.children, node.children[len(node.children)/2+1:]...)
 			for _, c := range newNode.children {
@@ -228,6 +235,8 @@ func (t *Tree) splitNode(node *TreeNode) *TreeNode {
 	}
 }
 
+// pretrazuje kljuc u stablu, ako ga pronadje vraca cvor i poziciju elementa
+// ako ga ne pronadje vraca cvor u kom je trebao da bude
 func (t *Tree) findNode(key string) (*TreeNode, int) {
 	curr_node := t.root
 	var found_node *TreeNode = nil
@@ -237,18 +246,18 @@ func (t *Tree) findNode(key string) (*TreeNode, int) {
 	}
 	for {
 		for i, k := range curr_node.keys {
-			if k == key {
+			if k == key { // pronadjen
 				found_node = curr_node
 				node_position = i
 				break
 			} else if k > key {
-				if len(curr_node.children) == 0 {
+				if len(curr_node.children) == 0 { //nema ovakvog elementa u cvoru
 					return curr_node, -1
 				}
-				curr_node = curr_node.children[i]
+				curr_node = curr_node.children[i] // prelazimo na dete
 				break
 			} else if i == len(curr_node.keys)-1 {
-				if len(curr_node.children) == 0 {
+				if len(curr_node.children) == 0 { // nema ovakvog elementa u cvoru
 					return curr_node, -1
 				}
 				curr_node = curr_node.children[i+1]
@@ -272,7 +281,7 @@ func (t *Tree) FindRecord(key string) *MemtableRecord {
 	return node.values[index]
 }
 
-// inorder obilazak kroz stablo, sluzi kako bih bratio sortirane vrednosti iz stabla
+// inorder obilazak kroz stablo, sluzi kako bih vratio sortirane vrednosti iz stabla
 func (t *Tree) Iterator() <-chan *MemtableRecord {
 	ch := make(chan *MemtableRecord)
 	go func() {

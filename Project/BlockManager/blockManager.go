@@ -14,7 +14,6 @@ type BlockManager struct {
 	blockSize               int
 	blocksPerSegment        int //blokova po segmentu u wal-u
 	bufferPool              *BufferPool
-	// currentSegment          int
 	currentBlock            int              // trenutni segment i blok u wal-u
 	walPath                 string           //putanja do wal foldera
 	segments                []string         //lista segmenata
@@ -29,10 +28,6 @@ func (blockManeger *BlockManager) GetBlockSize() int { //geter za velicinu bloka
 func (blockManager *BlockManager) GetSegments() []string {
 	return blockManager.segments
 }
-
-// func (blockManager *BlockManager) GetCurrentSegment() int {
-// 	return blockManager.currentSegment
-// }
 
 func (blockManager *BlockManager) GetCurrentBlock() int {
 	return blockManager.currentBlock
@@ -55,7 +50,6 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 
 	segments := make([]string, 0)
 
-	// var currentSegment int
 	var currentBlock int
 	orderOfSegments := make(map[int]int)
 	differentConfigSegments := make(map[string][]int)
@@ -86,7 +80,6 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 
 		file.Close()
 
-		// currentSegment = 0
 		currentBlock = 0
 
 		orderOfSegments[0] = 0
@@ -150,7 +143,6 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 		blockSize:               blockSize,
 		blocksPerSegment:        blocksPerSegment,
 		bufferPool:              &bufferPool,
-		// currentSegment:          currentSegment,
 		currentBlock:            currentBlock,
 		walPath:                 walPath,
 		segments:                segments,
@@ -165,7 +157,7 @@ func (blockManager *BlockManager) Reconstruct() ([]WalRecord,map[string]int) { /
 	fullRecords := []WalRecord{}
 	fragmentedParts := []WalRecord{}
 	currentFragmentedPosition := 1
-	recordSegments := make(map[string]int) //mapira kljuc recorda na listu segmenata u kojima se nalazi
+	recordSegments := make(map[string]int) //mapira kljuc recorda na poslednji segment u kom se on nalazi
 
 	i := 0 //brojac segmenata
 	var lastSegment string
@@ -194,12 +186,10 @@ func (blockManager *BlockManager) Reconstruct() ([]WalRecord,map[string]int) { /
 		fullSegment = true
 
 		blockManager.currentBlock = 0
-		// blockManager.currentSegment++
 		i++
 	}
 
 	if fullSegment {
-		// blockManager.currentSegment--
 		blockManager.currentBlock = blockManager.blocksPerSegment
 	}
 
@@ -472,7 +462,6 @@ func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja doda
 		var newBlock []byte
 		if blockManager.currentBlock == blockManager.blocksPerSegment {
 			blockManager.currentBlock = 0
-			// blockManager.currentSegment++
 
 			newBlock = blockManager.CreateNewSegment()
 			lastSegment = blockManager.segments[len(blockManager.segments)-1]
@@ -540,32 +529,14 @@ func (blockManager *BlockManager) CreateNewSegment() []byte { //funkcija koja kr
 	return header //vracamo header blok koji je upisan u novi segment
 }
 
-// func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija koja brise segmente iz WAL-a koji se vise ne koriste
-// 	for i := range lowWatermark {
-// 		os.Remove(blockManager.segments[i])
-// 	}
-// 	blockManager.segments = blockManager.segments[lowWatermark:]
-// }
 
 
-func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija koja brise segmente iz WAL-a koji se vise ne koriste
+func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija koja nakon flush-a brise segmente iz WAL-a koji se vise ne koriste
 	for i := lowWatermark-1; i >= 0; i-- {
 		os.Remove(blockManager.segments[i])
 		blockManager.segments = append(blockManager.segments[:i], blockManager.segments[i+1:]...)
 	}
 }
-
-// func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija koja brise segmente iz WAL-a koji se vise ne koriste
-// 	watermarkSegment := blockManager.walPath + "/wal_" + strconv.Itoa(lowWatermark) + ".log"
-// 	for i := 0; i < len(blockManager.segments); i++ {
-// 		os.Remove(blockManager.segments[i])
-// 		if blockManager.segments[i] == watermarkSegment {
-// 			blockManager.segments = blockManager.segments[i+1:]
-// 			break
-// 		}
-// 	}
-
-// }
 
 func (blockManager *BlockManager) FlushUnsaved() { //funkcija koja upisuje sve neupisane blokove u WAL
 	blocksForFlush := blockManager.bufferPool.Flush()
@@ -587,7 +558,7 @@ func (blockManager *BlockManager) FlushUnsaved() { //funkcija koja upisuje sve n
 	}
 }
 
-func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // menjam prvi korisni blok u segmentu nakon flusha
+func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // azuriram prvi korisni blok prvog segmenta nakon brisanja segmenata
 	segment := blockManager.segments[0]
 
 	file, err := os.OpenFile(segment, os.O_WRONLY, 0644)

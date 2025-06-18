@@ -14,6 +14,7 @@ type SkipList struct {
 	maxHeight int
 	level int
 	headNode *Node
+	size int
 	state string
 	linkedSegment int
 	lastBlockPosition int
@@ -33,19 +34,14 @@ func (s *SkipList) Clear() {
 	headNext := make([]*Node, s.maxHeight)
 	s.headNode = &Node{key: "",value:nil, next: headNext}
 	s.level = 1
+	s.size = 0
 	s.linkedSegment = 0
 	s.lastBlockPosition = 0
 	s.state = "empty"
 }
 
 func (s *SkipList) GetLength() int {
-	length := 0
-	current := s.headNode
-	for current.next[0] != nil {
-		current = current.next[0]
-		length++
-	}
-	return length
+	return s.size
 }
 
 func (s *SkipList) GetLinkedSegment() int {
@@ -68,7 +64,7 @@ func NewSkipList(maxHeight int) *SkipList {
 	headNext := make([]*Node, maxHeight)
 	n := &Node{key: "",value:nil, next: headNext}
 
-	return &SkipList{maxHeight: maxHeight, level:1, headNode: n, state: "empty", linkedSegment: 0, lastBlockPosition: 0}
+	return &SkipList{maxHeight: maxHeight, level:1, headNode: n,size:0, state: "empty", linkedSegment: 0, lastBlockPosition: 0}
 }
 
 
@@ -105,7 +101,7 @@ func (skipList *SkipList) AddRecord(record *MemtableRecord) {
 		update[i] = current
 	}
 
-	if current.next[0] != nil && current.next[0].key == key {
+	if current.next[0] != nil && current.next[0].key == key { // ako je pronadjen element sa ovim kljucem azuriram samo vrednost
 		current.next[0].value = record
 		return
 	}
@@ -116,14 +112,15 @@ func (skipList *SkipList) AddRecord(record *MemtableRecord) {
 		newNode.next[i] = update[i].next[i]
 		update[i].next[i] = newNode
 	}
+	skipList.size++
 }
 
 
 
 func (s *SkipList) roll() int {
 	level := 1
-	// possible ret values from rand are 0 and 1
-	// we stop shen we get a 0
+	// moguce vrednosti koje vraca su 0 i 1
+	// zaustavljamo se kada vrati 0
 	for ; rand.Int31n(2) == 1; level++ {
 		if level >= s.maxHeight{
 			return level
