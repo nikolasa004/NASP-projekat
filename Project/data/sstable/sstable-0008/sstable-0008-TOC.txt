@@ -1,0 +1,2 @@
+1
+data/sstable/sstable-0008/sstable-0008.bin

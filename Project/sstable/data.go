@@ -219,11 +219,12 @@ func FindDataRecord(key string, segmentOffset uint64, filename string) (DataReco
 	return DataRecord{}, false
 }
 
-func FindDataRecordBM(key string, segmentOffset uint64, filename string, bm BlockManager.BlockManager, maxDataOffset uint64) (*BlockManager.WalRecord, bool) {
+func FindDataRecordBM(key string, segmentOffset uint64, filename string, bm BlockManager.BlockManager, maxDataOffset uint64) (*BlockManager.WalRecord, bool, string, []byte) {
 	blockSize := bm.GetBlockSize()
+	var block []byte
 
 	for offset := segmentOffset; ; offset += uint64(blockSize) {
-		records, err := bm.ReadSstableRecordsFromBlocks(filename, offset, blockSize, maxDataOffset)
+		records, blockKey, block, err := bm.ReadSstableRecordsFromBlocks(filename, offset, blockSize, maxDataOffset)
 		if err != nil {
 			log.Fatal("Error reading records from blocks: ", err)
 		}
@@ -232,10 +233,10 @@ func FindDataRecordBM(key string, segmentOffset uint64, filename string, bm Bloc
 		}
 		for _, record := range records {
 			if record.Key == key {
-				return record, true
+				return record, true, blockKey, block
 			}
 		}
 	}
 
-	return nil, false
+	return nil, false, "", block
 }

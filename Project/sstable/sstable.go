@@ -414,6 +414,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 	}
 	oneFile := toc.SingleFile
 	files := toc.Files
+	fmt.Println("Buffer pool: ", blockManager.GetBufferPool().Buffer)
 	if oneFile {
 		filename = files[0]
 		filename = strings.TrimSpace(filename)
@@ -461,10 +462,15 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 
 		// Pročitaj podatke
 		maxDataOffset := metadata.DataOffset + metadata.DataLength
-		record, found := FindDataRecordBM(key, offset, filename, blockManager, maxDataOffset)
+		record, found, blockKey, block := FindDataRecordBM(key, offset, filename, blockManager, maxDataOffset)
 		if !found {
 			return &BlockManager.WalRecord{}, false
 		}
+
+		// Ako je pronadjen record, block se upisuje u buffer pool
+		fmt.Println("upisujem uu buffer pool", blockKey)
+		blockManager.PutBlock(blockKey, block)
+		fmt.Println(blockManager.GetBufferPool().Buffer)
 
 		return record, true
 
@@ -523,11 +529,14 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 		maxDataOffset := uint64(info.Size())
 
 		// Pročitaj podatke
-		record, found := FindDataRecordBM(key, offset, datafile, blockManager, maxDataOffset)
+		record, found, blockKey, block := FindDataRecordBM(key, offset, datafile, blockManager, maxDataOffset)
 		if !found {
 			return &BlockManager.WalRecord{}, false
 		}
-		fmt.Println("Nadjen record: ", record)
+
+		// Ako je pronadjen record, block se upisuje u buffer pool
+		blockManager.PutBlock(blockKey, block)
+
 		return record, true
 	}
 }
@@ -540,52 +549,30 @@ func FindInSstables(key string, blockManager BlockManager.BlockManager) (BlockMa
 	defer masterToc.Close()
 
 	var directories []string
-	reader := bufio.NewReader(masterToc)
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Fatal(err)
-		}
-		directories = append(directories, line[:len(line)-1])
-		for i, j := 0, len(directories)-1; i < j; i, j = i+1, j-1 {
-			directories[i], directories[j] = directories[j], directories[i]
-		}
+	scanner := bufio.NewScanner(masterToc)
+	for scanner.Scan() {
+		directories = append(directories, strings.TrimSpace(scanner.Text()))
 	}
 
-	allRecords := make([]*BlockManager.WalRecord, 0)
-
-	for _, dir := range directories {
-		dir = strings.TrimSpace(dir)
+	// Čitamo od najnovije ka starijim
+	for i := len(directories) - 1; i >= 0; i-- {
+		dir := directories[i]
 		tocfilename := "data/sstable/" + dir + "/" + dir + "-TOC.txt"
-		fmt.Println(tocfilename)
+
 		dataRecord, found := FindInSstable(key, tocfilename, blockManager)
 		if found {
-			allRecords = append(allRecords, dataRecord)
-		}
-	}
-
-	// Trazenje najnovijeg zapisa
-
-	if len(allRecords) == 0 {
-		return BlockManager.WalRecord{}, false
-	} else {
-		max := allRecords[0]
-		for _, record := range allRecords {
-			if record.Timestamp > max.Timestamp {
-				max = record
+			if !dataRecord.Tombstone {
+				// Ako je pronađen i nije tombstone, odmah vraćamo
+				return *dataRecord, true
+			} else {
+				// Ako je tombstone, znamo da je obrisan — prekidamo
+				return BlockManager.WalRecord{}, false
 			}
 		}
-		if !max.Tombstone {
-			return *max, true
-		} else {
-			return BlockManager.WalRecord{}, false
-		}
 	}
 
+	// Nije pronađen ni u jednom SSTable
+	return BlockManager.WalRecord{}, false
 }
 
 // Napravio sam TOC file kako bi lakse mogao da se pristupi svim fajlovima

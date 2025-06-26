@@ -1,0 +1,2 @@
+1
+data/sstable/sstable-0007/sstable-0007.bin

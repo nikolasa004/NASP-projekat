@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,6 +34,10 @@ func (blockManager *BlockManager) GetSegments() []string {
 
 func (blockManager *BlockManager) GetCurrentBlock() int {
 	return blockManager.currentBlock
+}
+
+func (blockManager *BlockManager) GetBufferPool() *BufferPool {
+	return blockManager.bufferPool
 }
 
 func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { //konstruktor za BlockManager
@@ -678,6 +683,15 @@ func (bm *BlockManager) PutSstableRawBlock(
 	return writtenKeys, offsets, totalWritten
 }
 
+func ExtractSstableNumber(path string) (int, error) {
+	re := regexp.MustCompile(`sstable-(\d{4})`)
+	match := re.FindStringSubmatch(path)
+	if len(match) < 2 {
+		return 0, fmt.Errorf("broj nije pronađen u pathu")
+	}
+	return strconv.Atoi(match[1])
+}
+
 func (bm *BlockManager) ReadSstableRecordFromBlock(path string, startOffset uint64, blockSize int) (*WalRecord, error) {
 	blockIdx := int(startOffset / uint64(blockSize))
 	var fragments []WalRecord
@@ -731,12 +745,22 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 	startOffset uint64,
 	blockSize int,
 	maxDataOffset uint64,
-) ([]*WalRecord, error) {
+) ([]*WalRecord, string, []byte, error) {
 	blockIdx := int(startOffset / uint64(blockSize))
 	var result []*WalRecord
 	var fragments []WalRecord
+	var block []byte
 	expectedType := uint8(1)
 	foundStart := false
+
+	tableIdx, err := ExtractSstableNumber(path)
+
+	if err != nil {
+		return nil, "", block, fmt.Errorf("greška pri ekstrakciji broja sstable iz patha %s: %v", path, err)
+	}
+
+	fmt.Println("Index tabele: ", tableIdx)
+	var blockKey string
 
 	for {
 		blockOffset := uint64(blockIdx) * uint64(blockSize)
@@ -744,10 +768,12 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 			break
 		}
 
-		block := bm.GetWalBlock(path, blockIdx, blockSize, false)
+		block = bm.GetWalBlock(path, blockIdx, blockSize, false)
 		if block == nil {
 			break
 		}
+
+		blockKey = fmt.Sprintf("sstable-%d-%d", tableIdx, blockIdx)
 
 		records := ReadAllRecordsSstable(block, int64(blockSize), false, true)
 		if len(records) == 0 {
@@ -797,9 +823,9 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 	}
 
 	if len(result) == 0 {
-		return nil, fmt.Errorf("no records found starting at offset %d", startOffset)
+		return nil, "", block, fmt.Errorf("no records found starting at offset %d", startOffset)
 	}
-	return result, nil
+	return result, blockKey, block, nil
 }
 
 // Zapisuje Bloom filter u blok u datoteci na datom offsetu.

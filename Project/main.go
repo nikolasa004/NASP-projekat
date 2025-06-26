@@ -8,7 +8,6 @@ import (
 	"project/Memtable"
 	"project/config"
 	"project/sstable"
-	"strconv"
 )
 
 func main() {
@@ -75,40 +74,40 @@ func main() {
 
 			fmt.Println("Nema takvog kljuca")
 		} else if operacija == "PUT" {
-			// fmt.Println("Unesite kljuc: ")
-			// scanner.Scan()
-			// kljuc := scanner.Text()
-			// fmt.Println("Unesite vrednost: ")
-			// scanner.Scan()
-			// vrednost := scanner.Text()
-			kljuc := "key" + strconv.Itoa(pomocnik)
+			fmt.Println("Unesite kljuc: ")
+			scanner.Scan()
+			kljuc := scanner.Text()
+			fmt.Println("Unesite vrednost: ")
+			scanner.Scan()
+			vrednost := scanner.Text()
+			// kljuc := "key" + strconv.Itoa(pomocnik)
 
-			var filename string
-			switch pomocnik {
-			case 7:
-				filename = "primer.txt"
-			case 6:
-				filename = "primer1.txt"
-			case 5:
-				filename = "primer2.txt"
-			case 4:
-				filename = "primer3.txt"
-			case 3:
-				filename = "primer4.txt"
-			case 2:
-				filename = "primer5.txt"
-			case 1:
-				filename = "primer6.txt"
-			case 0:
-				continue
-			}
+			// var filename string
+			// switch pomocnik {
+			// case 7:
+			// 	filename = "primer.txt"
+			// case 6:
+			// 	filename = "primer1.txt"
+			// case 5:
+			// 	filename = "primer2.txt"
+			// case 4:
+			// 	filename = "primer3.txt"
+			// case 3:
+			// 	filename = "primer4.txt"
+			// case 2:
+			// 	filename = "primer5.txt"
+			// case 1:
+			// 	filename = "primer6.txt"
+			// case 0:
+			// 	continue
+			// }
 
-			file, err := os.ReadFile(filename)
-			if err != nil {
-				fmt.Println("Greska pri citanju fajla:", err)
-				continue
-			}
-			vrednost := string(file)
+			// file, err := os.ReadFile(filename)
+			// if err != nil {
+			// 	fmt.Println("Greska pri citanju fajla:", err)
+			// 	continue
+			// }
+			// vrednost := string(file)
 
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize, false)
 			for _, record := range records {
