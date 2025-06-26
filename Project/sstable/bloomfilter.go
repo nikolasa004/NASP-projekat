@@ -1,18 +1,18 @@
 package sstable
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/gob"
 	"math"
-	"os"
 	"time"
 )
 
 type BloomFilter struct {
 	BitSet []byte
-	K      uint
-	M      uint
+	K      uint64
+	M      uint64
 	Hashes []HashWithSeed
 }
 
@@ -62,42 +62,24 @@ func (bf *BloomFilter) Check(item string) bool {
 	return true
 }
 
-func (bf *BloomFilter) Serialize(filename string) (uint64, error) {
-	var offset uint64
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
+func (bf *BloomFilter) Serialize() ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
 
+	err := encoder.Encode(bf)
 	if err != nil {
-		return offset, err
-	}
-	defer file.Close()
-
-	encoder := gob.NewEncoder(file)
-	err = encoder.Encode(bf)
-	offset += uint64(len(bf.BitSet))
-
-	if err != nil {
-		return offset, err
+		return nil, err
 	}
 
-	return offset, nil
+	return buf.Bytes(), nil
 }
 
-func Deserialize(offset uint64, length uint64, filename string) (*BloomFilter, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	_, err = file.Seek(int64(offset), 0)
-	if err != nil {
-		return nil, err
-	}
+func Deserialize(data []byte) (*BloomFilter, error) {
+	buf := bytes.NewReader(data)
+	decoder := gob.NewDecoder(buf)
 
 	var bf BloomFilter
-	decoder := gob.NewDecoder(file)
-	err = decoder.Decode(&bf)
-
+	err := decoder.Decode(&bf)
 	if err != nil {
 		return nil, err
 	}
@@ -127,10 +109,10 @@ func CreateHashFunctions(k uint32) []HashWithSeed {
 	return h
 }
 
-func CalculateM(expectedElements int, falsePositiveRate float64) uint {
-	return uint(math.Ceil(float64(expectedElements) * math.Abs(math.Log(falsePositiveRate)) / math.Pow(math.Log(2), float64(2))))
+func CalculateM(expectedElements int, falsePositiveRate float64) uint64 {
+	return uint64(math.Ceil(float64(expectedElements) * math.Abs(math.Log(falsePositiveRate)) / math.Pow(math.Log(2), 2)))
 }
 
-func CalculateK(expectedElements int, m uint) uint {
-	return uint(math.Ceil((float64(m) / float64(expectedElements)) * math.Log(2)))
+func CalculateK(expectedElements int, m uint64) uint64 {
+	return uint64(math.Ceil((float64(m) / float64(expectedElements)) * math.Log(2)))
 }

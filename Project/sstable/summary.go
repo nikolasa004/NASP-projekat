@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"project/BlockManager"
 )
 
 type Summary struct {
@@ -13,6 +14,7 @@ type Summary struct {
 	Filename     string
 	Min          string
 	Max          string
+	Type         uint8
 }
 
 func NewSummaryFromIndex(index *Index, filename string, sampleRate int) *Summary {
@@ -48,6 +50,97 @@ func NewSummary(keys []string, offsets []uint64, filename string, sampleRate int
 	}
 
 	return summary
+}
+
+func CreateFragmentedSummaryRecord(key string, offset uint64, fragment int, isHeader bool) []byte {
+	bytesRecord := []byte{}
+
+	keyBytes := []byte(key)
+	keySize := uint64(len(keyBytes))
+
+	// 1. Key size (8B)
+	keySizeBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(keySizeBytes, keySize)
+	bytesRecord = append(bytesRecord, keySizeBytes...)
+
+	// 2. Fragment type (1B)
+	typeBytes := []byte{byte(fragment)}
+	bytesRecord = append(bytesRecord, typeBytes...)
+
+	// 3. Offset (8B)
+	if !isHeader {
+		offsetBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(offsetBytes, offset)
+		bytesRecord = append(bytesRecord, offsetBytes...)
+	}
+	// 4. Key (keySize B)
+	bytesRecord = append(bytesRecord, keyBytes...)
+
+	return bytesRecord
+}
+
+func CreateSummaryRecordFragments(key string, offset uint64, blockSize int, isHeader bool) [][]byte {
+	binaryRecords := [][]byte{}
+
+	keySize := uint64(len(key))
+
+	var constMaxSize uint64
+
+	if !isHeader {
+		constMaxSize = uint64(blockSize) - 17 // 8 (keySize) + 1 (type) + 8 (offset)
+	} else {
+		constMaxSize = uint64(blockSize) - 9 // 8 (keySize) + 1 (type)
+	}
+
+	if keySize <= constMaxSize {
+		binaryRecord := CreateFragmentedSummaryRecord(key, offset, 0, isHeader)
+		binaryRecords = append(binaryRecords, binaryRecord)
+	} else {
+		fragmentedKeySize := constMaxSize
+		numberOfFragments := 1
+
+		for {
+			var newKey string
+			if keySize > fragmentedKeySize {
+				newKey = key[:fragmentedKeySize]
+			} else {
+				newKey = key
+			}
+
+			binaryRecord := CreateFragmentedSummaryRecord(newKey, offset, numberOfFragments, isHeader)
+			binaryRecords = append(binaryRecords, binaryRecord)
+
+			if len(newKey) == len(key) {
+				break
+			}
+
+			key = key[len(newKey):]
+			keySize -= uint64(len(newKey))
+			numberOfFragments++
+		}
+	}
+
+	return binaryRecords
+}
+
+func CreateMinMaxHeader(min, max string) []byte {
+	buf := []byte{}
+
+	// Min length + Min
+	minLen := uint64(len(min))
+	minLenBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(minLenBytes, minLen)
+	buf = append(buf, minLenBytes...)
+	buf = append(buf, []byte(min)...)
+
+	// Max length + Max
+	maxLen := uint64(len(max))
+	maxLenBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(maxLenBytes, maxLen)
+	buf = append(buf, maxLenBytes...)
+	buf = append(buf, []byte(max)...)
+
+	return buf
 }
 
 func (s *Summary) Add(key string, offset uint64) {
@@ -148,6 +241,209 @@ func (s *Summary) Write(multipleFiles bool, offset uint64) uint64 {
 
 	}
 	return currentOffset
+}
+
+func (s *Summary) writeWithBM(multipleFiles bool, offset uint64, bm *BlockManager.BlockManager) uint64 {
+
+	headerMinFragments := CreateSummaryRecordFragments(s.Min, 0, bm.GetBlockSize(), true)
+
+	headerMaxFragments := CreateSummaryRecordFragments(s.Max, 0, bm.GetBlockSize(), true)
+
+	keyFragmentsMap := make(map[string][][]byte)
+
+	keyFragmentsMap["MIN"] = headerMinFragments
+	keyFragmentsMap["MAX"] = headerMaxFragments
+
+	for i := range s.Keys {
+		fragments := CreateSummaryRecordFragments(s.Keys[i], s.IndexOffsets[i], bm.GetBlockSize(), false)
+		keyFragmentsMap[s.Keys[i]] = fragments
+	}
+
+	_, _, fileLen := bm.PutSstableRawBlock(keyFragmentsMap, s.Filename, multipleFiles, offset, false)
+
+	return fileLen
+}
+
+func ReadSummaryFromFile(bm *BlockManager.BlockManager, filename string, offset uint64, length uint64) *Summary {
+	blockSize := bm.GetBlockSize()
+	var blocks [][]byte
+
+	numBlocks := int(length / uint64(blockSize))
+	if length%uint64(blockSize) != 0 {
+		numBlocks++
+	}
+
+	for i := 0; i < numBlocks; i++ {
+		block := bm.GetWalBlock(filename, int(offset/uint64(blockSize))+i, blockSize, false)
+		if block != nil {
+			blocks = append(blocks, block)
+		}
+	}
+
+	return ReadSummaryFromBlocks(blocks)
+}
+
+func ReadSummaryFromBlocks(blocks [][]byte) *Summary {
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	summary := &Summary{}
+
+	// --- 1. Pročitaj MIN ---
+	minKey, blk, cur, err := readHeaderKey(blocks, 0, 0)
+	if err != nil {
+		fmt.Println("Error reading MIN:", err)
+		return nil
+	}
+	summary.Min = minKey
+	fmt.Println("MIN:", summary.Min)
+
+	// --- 2. Pročitaj MAX ---
+	maxKey, blk, cur, err := readHeaderKey(blocks, blk, cur)
+	if err != nil {
+		fmt.Println("Error reading MAX:", err)
+		return nil
+	}
+	summary.Max = maxKey
+	fmt.Println("MAX:", summary.Max)
+
+	// --- 3. Čitaj key+offset parove ---
+	var currentFragments []KeyOffsetPair
+	var lastType uint8
+
+	for blockIndex := blk; blockIndex < len(blocks); blockIndex++ {
+		block := blocks[blockIndex]
+		cursor := cur
+		if blockIndex != blk {
+			cursor = 0
+		}
+
+		for cursor+17 <= len(block) {
+			keySize := binary.LittleEndian.Uint64(block[cursor : cursor+8])
+			fragType := block[cursor+8]
+			offset := binary.LittleEndian.Uint64(block[cursor+9 : cursor+17])
+
+			if keySize == 0 || offset == 0 || cursor+17+int(keySize) > len(block) {
+				break
+			}
+
+			keyBytes := block[cursor+17 : cursor+17+int(keySize)]
+			cursor += 17 + int(keySize)
+
+			pair := KeyOffsetPair{
+				Key:    string(keyBytes),
+				Offset: offset,
+				KeyLen: keySize,
+				Type:   fragType,
+			}
+
+			if fragType == 0 {
+				if len(currentFragments) > 0 {
+					full := stitchFragments(currentFragments)
+					summary.Add(full.Key, full.Offset)
+					currentFragments = nil
+				}
+				summary.Add(pair.Key, pair.Offset)
+			} else {
+				if len(currentFragments) == 0 || fragType > lastType {
+					currentFragments = append(currentFragments, pair)
+					lastType = fragType
+				} else {
+					full := stitchFragments(currentFragments)
+					summary.Add(full.Key, full.Offset)
+					currentFragments = []KeyOffsetPair{pair}
+					lastType = fragType
+				}
+			}
+		}
+		cur = 0
+	}
+
+	if len(currentFragments) > 0 {
+		full := stitchFragments(currentFragments)
+		summary.Add(full.Key, full.Offset)
+	}
+
+	return summary
+}
+
+func readHeaderKey(blocks [][]byte, startBlockIndex int, startCursor int) (string, int, int, error) {
+	var fragments [][]byte
+	blockIndex := startBlockIndex
+	cursor := startCursor
+
+	blockSize := len(blocks[0])
+	totalRead := 0
+
+	for {
+		if blockIndex >= len(blocks) {
+			return "", blockIndex, cursor, fmt.Errorf("not enough blocks to read header key")
+		}
+
+		block := blocks[blockIndex]
+
+		if cursor+9 > len(block) {
+			blockIndex++
+			cursor = 0
+			continue
+		}
+
+		keySize := binary.LittleEndian.Uint64(block[cursor : cursor+8])
+		fragType := block[cursor+8]
+		cursor += 9
+		totalRead += 9
+
+		bytesRemaining := int(keySize)
+		keyFragment := make([]byte, 0, keySize)
+
+		for bytesRemaining > 0 {
+			if blockIndex >= len(blocks) {
+				return "", blockIndex, cursor, fmt.Errorf("not enough blocks for key fragment")
+			}
+
+			block = blocks[blockIndex]
+			available := len(block) - cursor
+			toRead := min(bytesRemaining, available)
+
+			keyFragment = append(keyFragment, block[cursor:cursor+toRead]...)
+			cursor += toRead
+			totalRead += toRead
+			bytesRemaining -= toRead
+
+			if cursor == blockSize {
+				blockIndex++
+				cursor = 0
+			}
+		}
+
+		fragments = append(fragments, keyFragment)
+
+		if fragType == 0 {
+			break
+		}
+	}
+
+	if cursor > 0 && allZero(blocks[blockIndex][cursor:]) {
+		blockIndex++
+		cursor = 0
+	}
+
+	fullKey := []byte{}
+	for _, f := range fragments {
+		fullKey = append(fullKey, f...)
+	}
+
+	return string(fullKey), blockIndex, cursor, nil
+}
+
+func allZero(data []byte) bool {
+	for _, b := range data {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Summary) ReadSummary(offset uint64, filename string) error {

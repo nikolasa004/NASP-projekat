@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"project/BlockManager"
+	"project/Memtable"
 	"strings"
 )
 
@@ -60,7 +62,7 @@ func GenerateSstableFilenames(baseDir string, tableID int) map[string]string {
 	return filenames
 }
 
-func NewSstable(data []DataRecord, sampleRate int, compaction bool) *Sstable {
+func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager) *Sstable {
 
 	tableId, err := GetNextTableID()
 	if err != nil {
@@ -104,27 +106,37 @@ func NewSstable(data []DataRecord, sampleRate int, compaction bool) *Sstable {
 		filter.Add(record.Key)
 	}
 	// Serijalizacija filtera
-	filter.Serialize(sstable.FilterFilename)
+	bytes, err := filter.Serialize()
+	blockManager.WriteBloomFilter(bytes, sstable.FilterFilename)
+	if err != nil {
+		log.Fatalf("Failed to write Bloom filter: %v", err)
+	}
 
-	// Kreiranje segmenata i upis data fajla
-	segments := makeSegments(data, 5)
-	keys, offsets, _ := WriteSegmentsToFile(sstable.DataFilename, segments, true, 0)
+	// Kreiranje blokova i upis preko block manager-a
+	blockSize := blockManager.GetBlockSize() // za sada
+	sstableRecords := make(map[string][][]byte)
+
+	for _, record := range data {
+		fragments := BlockManager.CreateBinaryRecordsWithFragmentation(record.Tombstone, record.Key, record.Value, blockSize, true)
+		sstableRecords[record.Key] = fragments
+	}
+	keys, offsets, _ := blockManager.PutSstableRecords(sstableRecords, tableId, sstable.DataFilename, true)
 
 	// Kreiranje indexa i upis index fajla
 	index := NewIndex(sstable.IndexFilename, keys, offsets)
 	index.Sort()
-	summaryKeys, summaryOffsets, _ := index.Write(true, 0)
+	summaryKeys, summaryOffsets, _ := index.WriteBM(true, 0, blockManager)
 
 	// Kreiranje summary fajla i upis summary fajla
 	summary := NewSummary(summaryKeys, summaryOffsets, sstable.SummaryFilename, sampleRate)
-	summary.Write(true, 0)
+	summary.writeWithBM(true, 0, blockManager)
 
 	UpdateMasterTOC(fmt.Sprintf("sstable-%04d", tableId))
 
 	return sstable
 }
 
-func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Sstable {
+func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager) *Sstable {
 
 	tableId, err := GetNextTableID()
 	if err != nil {
@@ -169,26 +181,44 @@ func NewSstableOneFile(data []DataRecord, sampleRate int, compaction bool) *Ssta
 	}
 
 	metadata.FilterOffset = currentOffset
-	metadata.FilterLength, _ = filter.Serialize(sstable.Filename)
-	info, _ := os.Stat(sstable.Filename)
-	currentOffset += uint64(info.Size())
+	// Serijalizacija filtera
+	bytes, err := filter.Serialize()
+	blockManager.WriteBloomFilter(bytes, sstable.FilterFilename)
+	metadata.FilterLength = uint64(len(bytes))
+	currentOffset += uint64(blockManager.GetBlockSize())
+
+	if err != nil {
+		log.Fatalf("Failed to write Bloom filter: %v", err)
+	}
+
+	// Pravljenje fragmentisanih zapisa i upis preko block manager-a
+	blockSize := blockManager.GetBlockSize() // za sada
+	sstableRecords := make(map[string][][]byte)
+
+	for _, record := range data {
+		fragments := BlockManager.CreateBinaryRecordsWithFragmentation(record.Tombstone, record.Key, record.Value, blockSize, true)
+		sstableRecords[record.Key] = fragments
+	}
 
 	metadata.DataOffset = currentOffset
-	segments := makeSegments(data, 5)
-	keys, offsets, dataLength := WriteSegmentsToFile(sstable.Filename, segments, false, currentOffset)
+	keys, offsets, dataLength := blockManager.PutSstableRecords(sstableRecords, tableId, sstable.Filename, false)
 	metadata.DataLength = dataLength
 	currentOffset += dataLength
+
+	fmt.Println("Keys: ", keys, "Offsets: ", offsets, "DataLength: ", dataLength)
 
 	metadata.IndexOffset = currentOffset
 	index := NewIndex(sstable.Filename, keys, offsets)
 	index.Sort()
-	summaryKeys, summaryOffsets, indexLength := index.Write(false, currentOffset)
+	summaryKeys, summaryOffsets, indexLength := index.WriteBM(false, currentOffset, blockManager)
+	fmt.Println("Current offset --> ", currentOffset, "Index Offsets: ", summaryOffsets, "Index Length: ", indexLength)
 	metadata.IndexLength = indexLength
 	currentOffset += indexLength
 
 	metadata.SummaryOffset = currentOffset
 	summary := NewSummary(summaryKeys, summaryOffsets, sstable.Filename, sampleRate)
-	summaryLength := summary.Write(false, currentOffset)
+	summaryLength := summary.writeWithBM(false, currentOffset, blockManager)
+	fmt.Println("Summary Offsets: ", summary.IndexOffsets, "Summary Length: ", summaryLength)
 	metadata.SummaryLength = summaryLength
 	currentOffset += summaryLength
 
@@ -330,11 +360,11 @@ func ReadMetadata(filename string) (Metadata, error) {
 	return metadata, nil
 }
 
-func WriteSstable(data []DataRecord, sampleRate int, compaction bool, oneFile bool) *Sstable {
+func WriteSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, oneFile bool, blockManager *BlockManager.BlockManager) *Sstable {
 	if oneFile {
-		return NewSstableOneFile(data, sampleRate, compaction)
+		return NewSstableOneFile(data, sampleRate, compaction, blockManager)
 	}
-	return NewSstable(data, sampleRate, compaction)
+	return NewSstable(data, sampleRate, compaction, blockManager)
 }
 
 func createFiles(tableID int, oneFile bool) (string, error) {
@@ -375,7 +405,7 @@ func createFiles(tableID int, oneFile bool) (string, error) {
 	return tableDir, nil
 }
 
-func FindInSstable(key string, filename string) (DataRecord, bool) {
+func FindInSstable(key string, filename string, blockManager BlockManager.BlockManager) (*BlockManager.WalRecord, bool) {
 	var toc TOC
 	var err error
 	toc, err = ReadTOCFile(filename)
@@ -399,35 +429,41 @@ func FindInSstable(key string, filename string) (DataRecord, bool) {
 		}
 
 		// Proveri da li je ključ u filteru
-		filter, err := Deserialize(metadata.FilterOffset, metadata.FilterLength, filename)
+		filterBlock := blockManager.GetWalBlock(filename, int(metadata.FilterOffset), blockManager.GetBlockSize(), false)
+		filter, err := Deserialize(filterBlock[:metadata.FilterLength])
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		if !filter.Check(key) {
-			return DataRecord{}, false
+			return &BlockManager.WalRecord{}, false
 		}
 
 		// Proveri da li je ključ u summary-ju
 		summary := &Summary{}
-		summary.ReadSummary(metadata.SummaryOffset, filename)
+		summary = ReadSummaryFromFile(&blockManager, filename, metadata.SummaryOffset, metadata.SummaryLength)
 		found, offset := summary.Find(key)
 
 		if !found {
-			return DataRecord{}, false
+			return &BlockManager.WalRecord{}, false
 		}
 
 		// Proveri da li je ključ u indexu
 		var index *Index
-		found, offset = index.FindIndex(key, metadata.IndexOffset+offset, filename)
+		keyOffsetPairs := ReadIndexFromFile(&blockManager, filename, offset, metadata.IndexLength)
+		found, offset = index.SearchIndex(key, keyOffsetPairs)
 		if !found {
-			return DataRecord{}, false
+			return &BlockManager.WalRecord{}, false
 		}
 
+		// Posto je single file mod, filter je pre data dela napisan:
+		offset += uint64(blockManager.GetBlockSize())
+
 		// Pročitaj podatke
-		record, found := FindDataRecord(key, metadata.DataOffset+offset, filename)
+		maxDataOffset := metadata.DataOffset + metadata.DataLength
+		record, found := FindDataRecordBM(key, offset, filename, blockManager, maxDataOffset)
 		if !found {
-			return DataRecord{}, false
+			return &BlockManager.WalRecord{}, false
 		}
 
 		return record, true
@@ -439,42 +475,64 @@ func FindInSstable(key string, filename string) (DataRecord, bool) {
 		filterfile := files[3]
 
 		// Proveri da li je ključ u filteru
-		filter, err := Deserialize(0, 0, filterfile)
+		filterBlock := blockManager.GetWalBlock(filterfile, 0, blockManager.GetBlockSize(), false)
+		filter, err := Deserialize(filterBlock)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		if !filter.Check(key) {
-			return DataRecord{}, false
+			return &BlockManager.WalRecord{}, false
 		}
 
 		// Proveri da li je ključ u summary-ju
+
+		info, err := os.Stat(summaryfile)
+		if err != nil {
+			log.Fatalf("Greska pri dohvatanju informacija o fajlu %s: %v", summaryfile, err)
+		}
+		length := uint64(info.Size())
+
 		summary := &Summary{}
-		summary.ReadSummary(0, summaryfile)
+		summary = ReadSummaryFromFile(&blockManager, summaryfile, 0, length)
 		found, offsetS := summary.Find(key)
 
 		if !found {
-			return DataRecord{}, false
+			return &BlockManager.WalRecord{}, false
 		}
 
 		// Proveri da li je ključ u indexu
-		var index *Index
-		found, offset := index.FindIndex(key, offsetS, indexfile)
-		if !found {
-			return DataRecord{}, false
+
+		info, err = os.Stat(indexfile)
+		if err != nil {
+			log.Fatalf("Greska pri dohvatanju informacija o fajlu %s: %v", indexfile, err)
 		}
+		length = uint64(info.Size())
+
+		var index *Index
+		keyOffsetPairs := ReadIndexFromFile(&blockManager, indexfile, offsetS, length)
+		found, offset := index.SearchIndex(key, keyOffsetPairs)
+		if !found {
+			return &BlockManager.WalRecord{}, false
+		}
+
+		info, err = os.Stat(datafile)
+		if err != nil {
+			log.Fatalf("Greska pri dohvatanju informacija o fajlu %s: %v", datafile, err)
+		}
+		maxDataOffset := uint64(info.Size())
 
 		// Pročitaj podatke
-		record, found := FindDataRecord(key, offset, datafile)
+		record, found := FindDataRecordBM(key, offset, datafile, blockManager, maxDataOffset)
 		if !found {
-			return DataRecord{}, false
+			return &BlockManager.WalRecord{}, false
 		}
-
+		fmt.Println("Nadjen record: ", record)
 		return record, true
 	}
 }
 
-func FindInSstables(key string) (DataRecord, bool) {
+func FindInSstables(key string, blockManager BlockManager.BlockManager) (BlockManager.WalRecord, bool) {
 	masterToc, err := os.OpenFile("data/sstable/master-toc.txt", os.O_RDONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
@@ -498,13 +556,13 @@ func FindInSstables(key string) (DataRecord, bool) {
 		}
 	}
 
-	allRecords := make([]DataRecord, 0)
+	allRecords := make([]*BlockManager.WalRecord, 0)
 
 	for _, dir := range directories {
 		dir = strings.TrimSpace(dir)
 		tocfilename := "data/sstable/" + dir + "/" + dir + "-TOC.txt"
 		fmt.Println(tocfilename)
-		dataRecord, found := FindInSstable(key, tocfilename)
+		dataRecord, found := FindInSstable(key, tocfilename, blockManager)
 		if found {
 			allRecords = append(allRecords, dataRecord)
 		}
@@ -513,7 +571,7 @@ func FindInSstables(key string) (DataRecord, bool) {
 	// Trazenje najnovijeg zapisa
 
 	if len(allRecords) == 0 {
-		return DataRecord{}, false
+		return BlockManager.WalRecord{}, false
 	} else {
 		max := allRecords[0]
 		for _, record := range allRecords {
@@ -522,9 +580,9 @@ func FindInSstables(key string) (DataRecord, bool) {
 			}
 		}
 		if !max.Tombstone {
-			return max, true
+			return *max, true
 		} else {
-			return DataRecord{}, false
+			return BlockManager.WalRecord{}, false
 		}
 	}
 

@@ -2,8 +2,10 @@ package BlockManager
 
 import (
 	"encoding/binary"
+	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -151,7 +153,7 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 	}
 }
 
-func (blockManager *BlockManager) Reconstruct() ([]WalRecord,map[string]int) { //funkcija koja podize sistem i rekonstruise stanje
+func (blockManager *BlockManager) Reconstruct() ([]WalRecord, map[string]int) { //funkcija koja podize sistem i rekonstruise stanje
 	fullSegment := false
 	endOfLastSegment := false
 	fullRecords := []WalRecord{}
@@ -284,7 +286,7 @@ func (blockManager *BlockManager) ProcessWalSegment(blocksPerSegment, blockSize,
 					if *currentFragmentedPosition == int(record.Type) {
 						*fragmentedParts = append(*fragmentedParts, record)
 						*currentFragmentedPosition++
-					} else if(*currentFragmentedPosition > int(record.Type)) { //ako je fragmentacija resetovana, treba da spojimo sve delove u jedan zapis
+					} else if *currentFragmentedPosition > int(record.Type) { //ako je fragmentacija resetovana, treba da spojimo sve delove u jedan zapis
 						*currentFragmentedPosition = 1
 
 						keyBytes := []byte{}
@@ -486,11 +488,371 @@ func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja doda
 	}
 }
 
+// Funckija koja blok Sstable ubacuje u buffer pool i upisuje ga na disk.
+func (blockManager *BlockManager) PutSstableBlock(tableId int, blockIdx int, value []byte, path string) {
+	key := fmt.Sprintf("sstable-%d-%d", tableId, blockIdx)
+
+	blockManager.bufferPool.Put(key, value, true)                          //stavljamo blok u bafer pool
+	blockManager.WriteBlock(value, blockManager.blockSize, blockIdx, path) //upisujemo blok u sstable fajl
+}
+
+// Funckija koja ce fragmentisane zapisa za Sstable ubaciti u blokove, ubaciti ih u buffer pool i upisati na disk.
+func (blockManager *BlockManager) PutSstableRecords(
+	fragmentsPerRecord map[string][][]byte,
+	tableId int,
+	path string,
+	multipleFiles bool,
+) (keys []string, offsets []uint64, dataLength uint64) {
+	blockSize := blockManager.blockSize
+	block := make([]byte, 0, blockSize)
+	var blockIdx int
+	if multipleFiles {
+		blockIdx = 0
+	} else {
+		blockIdx = 1 // prvi blok je filter blok, pa pocinjemo od 1
+	}
+	currentOffset := uint64(0)
+
+	for key, fragments := range fragmentsPerRecord {
+		keyOffsetCaptured := false
+		for _, fragment := range fragments {
+			if len(fragment) > blockSize {
+				panic(fmt.Sprintf("Fragment size %d exceeds block size %d – check fragmentation logic", len(fragment), blockSize))
+			}
+
+			if len(block)+len(fragment) > blockSize {
+				// popuni padding i piši blok
+				paddingSize := blockSize - len(block)
+				block = append(block, make([]byte, paddingSize)...)
+
+				blockManager.PutSstableBlock(tableId, blockIdx, block, path)
+				dataLength += uint64(len(block))
+				currentOffset += uint64(len(block))
+
+				blockIdx++
+				block = make([]byte, 0, blockSize)
+			}
+
+			if !keyOffsetCaptured {
+				keys = append(keys, key)
+				offsets = append(offsets, currentOffset)
+				keyOffsetCaptured = true
+			}
+
+			block = append(block, fragment...)
+		}
+	}
+
+	if len(block) > 0 {
+		paddingSize := blockSize - len(block)
+		block = append(block, make([]byte, paddingSize)...)
+
+		blockManager.PutSstableBlock(tableId, blockIdx, block, path)
+		dataLength += uint64(len(block))
+		currentOffset += uint64(len(block))
+		blockIdx++
+	}
+
+	return keys, offsets, dataLength
+}
+
+// Funkcija za ubacivanje zapisa u blokove i upis za ostale strukture Sstable.
+func (bm *BlockManager) PutSstableRawBlock(
+	fragmentsPerKey map[string][][]byte,
+	filename string,
+	multipleFiles bool,
+	offset uint64,
+	returnOffsets bool,
+) (writtenKeys []string, offsets []uint64, totalWritten uint64) {
+	blockSize := bm.GetBlockSize()
+	block := make([]byte, 0, blockSize)
+	blockOffset := offset
+	totalWritten = 0
+
+	file, err := os.OpenFile(filename, os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("Greska pri otvaranju fajla %s: %v", filename, err)
+	}
+	defer file.Close()
+
+	if !multipleFiles {
+		_, err := file.Seek(int64(offset), 0)
+		if err != nil {
+			log.Fatalf("Greska pri seek-u: %v", err)
+		}
+	}
+
+	writtenKeys = []string{}
+	offsets = []uint64{}
+
+	// Priprema redosleda ključeva
+	keys := make([]string, 0, len(fragmentsPerKey))
+	for k := range fragmentsPerKey {
+		keys = append(keys, k)
+	}
+
+	if returnOffsets {
+		sort.Strings(keys)
+	} else {
+		minKey := "MIN"
+		maxKey := "MAX"
+
+		otherKeys := make([]string, 0, len(keys))
+		for _, k := range keys {
+			if k != minKey && k != maxKey {
+				otherKeys = append(otherKeys, k)
+			}
+		}
+		sort.Strings(otherKeys)
+
+		keys = []string{}
+		if _, ok := fragmentsPerKey[minKey]; ok {
+			keys = append(keys, minKey)
+		}
+		if _, ok := fragmentsPerKey[maxKey]; ok {
+			keys = append(keys, maxKey)
+		}
+		keys = append(keys, otherKeys...)
+	}
+
+	for _, key := range keys {
+		fragments := fragmentsPerKey[key]
+		keyOffsetCaptured := false
+
+		for i, fragment := range fragments {
+			if len(fragment) > blockSize {
+				panic(fmt.Sprintf("Fragment size %d exceeds block size %d – check fragmentation logic", len(fragment), blockSize))
+			}
+
+			if len(block)+len(fragment) > blockSize {
+				padding := make([]byte, blockSize-len(block))
+				block = append(block, padding...)
+
+				_, err := file.Write(block)
+				if err != nil {
+					log.Fatalf("Greska pri upisu bloka: %v", err)
+				}
+
+				totalWritten += uint64(len(block))
+				blockOffset += uint64(len(block))
+				block = make([]byte, 0, blockSize)
+			}
+
+			if returnOffsets && !keyOffsetCaptured {
+				writtenKeys = append(writtenKeys, key)
+				offsets = append(offsets, blockOffset)
+				keyOffsetCaptured = true
+			}
+
+			block = append(block, fragment...)
+
+			// Ako je poslednji fragment i ključ je "MAX", dodaj padding i upiši blok
+			if !returnOffsets && key == "MAX" && i == len(fragments)-1 {
+				padding := make([]byte, blockSize-len(block))
+				block = append(block, padding...)
+
+				_, err := file.Write(block)
+				if err != nil {
+					log.Fatalf("Greska pri upisu bloka posle MAX: %v", err)
+				}
+
+				totalWritten += uint64(len(block))
+				blockOffset += uint64(len(block))
+				block = make([]byte, 0, blockSize)
+			}
+		}
+	}
+
+	if len(block) > 0 {
+		padding := make([]byte, blockSize-len(block))
+		block = append(block, padding...)
+
+		_, err := file.Write(block)
+		if err != nil {
+			log.Fatalf("Greska pri upisu poslednjeg bloka: %v", err)
+		}
+
+		totalWritten += uint64(len(block))
+	}
+
+	return writtenKeys, offsets, totalWritten
+}
+
+func (bm *BlockManager) ReadSstableRecordFromBlock(path string, startOffset uint64, blockSize int) (*WalRecord, error) {
+	blockIdx := int(startOffset / uint64(blockSize))
+	var fragments []WalRecord
+	expectedType := uint8(1)
+	foundStart := false
+
+	for {
+		block := bm.GetWalBlock(path, blockIdx, blockSize, false)
+		if block == nil {
+			// Ako nema više blokova i imamo fragmente — stitchuj i vrati
+			if foundStart && len(fragments) > 0 {
+				return stitchFragments(fragments), nil
+			}
+			break
+		}
+
+		records := ReadAllRecordsSstable(block, int64(blockSize), false, true)
+		for _, record := range records {
+			if record.CRC == 0 {
+				break // padding
+			}
+
+			if record.Type == 0 {
+				return &record, nil
+			}
+
+			if record.Type == 1 && !foundStart {
+				fragments = []WalRecord{record}
+				foundStart = true
+				expectedType = 2
+			} else if foundStart && record.Type == expectedType {
+				fragments = append(fragments, record)
+				expectedType++
+			} else if foundStart && record.Type < expectedType {
+				return stitchFragments(fragments), nil
+			}
+		}
+
+		blockIdx++
+	}
+
+	if foundStart && len(fragments) > 0 {
+		return stitchFragments(fragments), nil
+	}
+
+	return nil, fmt.Errorf("no valid record found from offset %d", startOffset)
+}
+
+func (bm *BlockManager) ReadSstableRecordsFromBlocks(
+	path string,
+	startOffset uint64,
+	blockSize int,
+	maxDataOffset uint64,
+) ([]*WalRecord, error) {
+	blockIdx := int(startOffset / uint64(blockSize))
+	var result []*WalRecord
+	var fragments []WalRecord
+	expectedType := uint8(1)
+	foundStart := false
+
+	for {
+		blockOffset := uint64(blockIdx) * uint64(blockSize)
+		if blockOffset >= maxDataOffset {
+			break
+		}
+
+		block := bm.GetWalBlock(path, blockIdx, blockSize, false)
+		if block == nil {
+			break
+		}
+
+		records := ReadAllRecordsSstable(block, int64(blockSize), false, true)
+		if len(records) == 0 {
+			break
+		}
+
+		for _, record := range records {
+			if record.CRC == 0 {
+				continue // padding
+			}
+
+			switch {
+			case record.Type == 0:
+				// Full record
+				result = append(result, &record)
+
+			case record.Type == 1 && !foundStart:
+				// Start of fragmentation
+				fragments = []WalRecord{record}
+				foundStart = true
+				expectedType = 2
+
+			case foundStart && record.Type == expectedType:
+				// Valid continuation
+				fragments = append(fragments, record)
+				expectedType++
+
+			case foundStart && record.Type < expectedType:
+				// Fragmentacija završena
+				full := stitchFragments(fragments)
+				result = append(result, full)
+
+				// Reset for potential next record
+				fragments = nil
+				foundStart = false
+				expectedType = 1
+			}
+		}
+
+		blockIdx++
+	}
+
+	// Ako fragmentacija ide do kraja fajla — stitchuj poslednji fragment
+	if foundStart && len(fragments) > 0 {
+		full := stitchFragments(fragments)
+		result = append(result, full)
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no records found starting at offset %d", startOffset)
+	}
+	return result, nil
+}
+
+// Zapisuje Bloom filter u blok u datoteci na datom offsetu.
+func (bm *BlockManager) WriteBloomFilter(filterData []byte, filename string) (written uint64) {
+	blockSize := bm.GetBlockSize()
+
+	// Napuni blok paddingom ako
+	block := make([]byte, blockSize)
+	copy(block, filterData)
+
+	file, err := os.OpenFile(filename, os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("Greška pri otvaranju fajla: %v", err)
+	}
+	defer file.Close()
+
+	n, err := file.Write(block)
+	if err != nil {
+		log.Fatalf("Greška pri upisu Bloom filter bloka: %v", err)
+	}
+
+	return uint64(n)
+}
+
+func stitchFragments(fragments []WalRecord) *WalRecord {
+	fullValue := []byte{}
+	fullKey := []byte{}
+	for _, frag := range fragments {
+		fullValue = append(fullValue, frag.Value...)
+		fullKey = append(fullKey, frag.Key...)
+	}
+
+	// Poslednji fragment sadrži TOMBSTONE
+	last := fragments[len(fragments)-1]
+
+	return &WalRecord{
+		CRC:       0,
+		Size:      0,
+		Type:      0,
+		Timestamp: 0,
+		Tombstone: last.Tombstone,
+		KeySize:   uint64(len(fullKey)),
+		ValueSize: uint64(len(fullValue)),
+		Key:       string(fullKey),
+		Value:     fullValue,
+	}
+}
+
 func (blockManager *BlockManager) CreateNewSegment() []byte { //funkcija koja kreira novi segment u WAL-u
 	lastSegment := blockManager.segments[len(blockManager.segments)-1]
 	lastSegmentName := strings.TrimSuffix(lastSegment, ".log")
 	parts := strings.Split(lastSegmentName, "_")
-	lastSegmentNumber,err := strconv.Atoi(parts[len(parts)-1])
+	lastSegmentNumber, err := strconv.Atoi(parts[len(parts)-1])
 	if err != nil {
 		log.Fatal("Greska: ", err)
 		return nil
@@ -529,10 +891,8 @@ func (blockManager *BlockManager) CreateNewSegment() []byte { //funkcija koja kr
 	return header //vracamo header blok koji je upisan u novi segment
 }
 
-
-
 func (blockManager *BlockManager) DeleteSegments(lowWatermark int) { //funkcija koja nakon flush-a brise segmente iz WAL-a koji se vise ne koriste
-	for i := lowWatermark-1; i >= 0; i-- {
+	for i := lowWatermark - 1; i >= 0; i-- {
 		os.Remove(blockManager.segments[i])
 		blockManager.segments = append(blockManager.segments[:i], blockManager.segments[i+1:]...)
 	}

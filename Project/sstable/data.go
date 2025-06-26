@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"project/BlockManager"
 	"sort"
 )
 
@@ -218,16 +219,23 @@ func FindDataRecord(key string, segmentOffset uint64, filename string) (DataReco
 	return DataRecord{}, false
 }
 
-func makeSegments(dataRecords []DataRecord, segmentSize int) []DataSegment {
-	SortRecords(dataRecords)
-	segments := make([]DataSegment, 0)
-	var currentSegment DataSegment
-	for i, record := range dataRecords {
-		currentSegment.Add(record)
-		if (i+1)%segmentSize == 0 || i == len(dataRecords)-1 {
-			segments = append(segments, currentSegment)
-			currentSegment = DataSegment{}
+func FindDataRecordBM(key string, segmentOffset uint64, filename string, bm BlockManager.BlockManager, maxDataOffset uint64) (*BlockManager.WalRecord, bool) {
+	blockSize := bm.GetBlockSize()
+
+	for offset := segmentOffset; ; offset += uint64(blockSize) {
+		records, err := bm.ReadSstableRecordsFromBlocks(filename, offset, blockSize, maxDataOffset)
+		if err != nil {
+			log.Fatal("Error reading records from blocks: ", err)
+		}
+		if records == nil || len(records) == 0 {
+			break
+		}
+		for _, record := range records {
+			if record.Key == key {
+				return record, true
+			}
 		}
 	}
-	return segments
+
+	return nil, false
 }

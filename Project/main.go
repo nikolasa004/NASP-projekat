@@ -33,16 +33,9 @@ func main() {
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
 	flushedReconstructRecords, flushed := memtable.Reconstruct(blockManager) // rekonstrukcija engine-a unosom zapisa iz Wal-a prilikom pokretanja
-	if flushed { // moze da dodje do flush-a ako je promenjena konfiguracija
+	if flushed {                                                             // moze da dodje do flush-a ako je promenjena konfiguracija
 		for _, recs := range flushedReconstructRecords {
-			// ovde bjelica treba da napravi funkciju u koju ce da spakuje ovu logiku
-			sstableRecords := make([]sstable.DataRecord, len(recs))
-			//sada treba da se napravi sstable
-			for i, record := range recs {
-				rec := sstable.NewRecord(record.Key, record.Value, record.Tombstone, record.Timestamp)
-				sstableRecords[i] = rec
-			}
-			sstable.WriteSstable(sstableRecords, summarySampleRate, false, oneFile)
+			sstable.WriteSstable(recs, summarySampleRate, false, oneFile, blockManager)
 		}
 	}
 
@@ -53,7 +46,7 @@ func main() {
 		var operacija string
 		scanner.Scan()
 		operacija = scanner.Text()
-		if pomocnik > 0 && operacija == "PUT"{
+		if pomocnik > 0 && operacija == "PUT" {
 			pomocnik--
 		}
 		// if pomocnik > 1 {
@@ -70,11 +63,11 @@ func main() {
 			if found {
 				fmt.Println(string(record.Value))
 				continue
-			} else if(record != nil && !found) {
+			} else if record != nil && !found {
 				fmt.Println("Nema takvog kljuca")
 				continue
 			}
-			SSrecord, found := sstable.FindInSstables(kljuc)
+			SSrecord, found := sstable.FindInSstables(kljuc, *blockManager)
 			if found {
 				fmt.Println(string(SSrecord.Value))
 				continue
@@ -117,21 +110,15 @@ func main() {
 			}
 			vrednost := string(file)
 
-			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize)
+			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize, false)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
 			fmt.Println("SS - One file: ", oneFile)
-			flushedRecords, flushed := memtable.PutRecord(false,kljuc, vrednost, blockManager, len(blockManager.GetSegments()) - 1)
+			flushedRecords, flushed := memtable.PutRecord(false, kljuc, vrednost, blockManager, len(blockManager.GetSegments())-1)
+			fmt.Println("Flushed", flushed)
 			if flushed {
-				// ovde bjelica treba da napravi funkciju u koju ce da spakuje ovu logiku
-				sstableRecords := make([]sstable.DataRecord, len(flushedRecords))
-				//sada treba da se napravi sstable
-				for i, record := range flushedRecords {
-					rec := sstable.NewRecord(record.Key, record.Value, record.Tombstone, record.Timestamp)
-					sstableRecords[i] = rec
-				}
-				sstable.WriteSstable(sstableRecords, summarySampleRate, false, oneFile)
+				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
 			}
 		} else if operacija == "DELETE" {
 			fmt.Println("Unesite kljuc: ")
@@ -139,20 +126,13 @@ func main() {
 			kljuc := scanner.Text()
 
 			//napraviti zapis sa tombstone = true
-			records := BlockManager.CreateBinaryRecordsWithFragmentation(true, kljuc, []byte(""), blockSize)
+			records := BlockManager.CreateBinaryRecordsWithFragmentation(true, kljuc, []byte(""), blockSize, false)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
-			flushedRecords, flushed := memtable.PutRecord(true, kljuc,"", blockManager, len(blockManager.GetSegments()) - 1)
+			flushedRecords, flushed := memtable.PutRecord(true, kljuc, "", blockManager, len(blockManager.GetSegments())-1)
 			if flushed {
-				// ovde bjelica treba da napravi funkciju u koju ce da spakuje ovu logiku
-				sstableRecords := make([]sstable.DataRecord, len(flushedRecords))
-				//sada treba da se napravi sstable
-				for i, record := range flushedRecords {
-					rec := sstable.NewRecord(record.Key, record.Value, record.Tombstone, record.Timestamp)
-					sstableRecords[i] = rec
-				}
-				sstable.WriteSstable(sstableRecords, summarySampleRate, false, oneFile)
+				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
 			}
 		} else if operacija == "/" {
 			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal
