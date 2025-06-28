@@ -9,6 +9,7 @@ import (
 	"project/Types"
 	"project/config"
 	"project/sstable"
+	"strconv"
 	"strings"
 )
 
@@ -140,7 +141,7 @@ func main() {
 			break
 		} else if operacija == "Types" {
 			for {
-				fmt.Println("Sa čime želite da radite? Ukucajte cms za Count Min Sketch, hll za HyperLogLog, sh za SimHash ili bl za BloomFilter: ")
+				fmt.Println("Sa čime želite da radite? Ukucajte cms za Count Min Sketch, hll za HyperLogLog, sh za SimHash, bl za BloomFilter ili nazad da izadjete iz biranja rada sa dostupnim strukturama: ")
 				var operacija string
 				scanner.Scan()
 				operacija = scanner.Text()
@@ -220,12 +221,91 @@ func main() {
 								fmt.Println("Nema takvog kljuca")
 							}
 
+						} else if operacija == "novi" { //AIDJIADHAIHDAHIDAIDHIADHASIASJ
+							for {
+								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
+								var keyCMS string
+								scanner.Scan()
+								keyCMS = scanner.Text()
+								if keyCMS == "nazad" {
+									continue cmsLoop
+								}
+
+								if !strings.HasPrefix(keyCMS, "cms_") {
+									fmt.Println("Ključ mora početi sa 'cms_'")
+									continue
+								}
+
+								//provera da li je unikatan
+								if _, found := memtable.GetRecord(keyCMS); found {
+									fmt.Println("Ključ već postoji(MemTable)")
+									continue
+								}
+								if _, found := sstable.FindInSstables(keyCMS, *blockManager); found {
+									fmt.Println("Ključ već postoji (SSTable)")
+									continue
+								}
+								var epsilon, delta float64
+								fmt.Println("Unesite epsilon:")
+								for {
+									scanner.Scan()
+									input := scanner.Text()
+									var err error
+									epsilon, err = strconv.ParseFloat(input, 64)
+									if err != nil || epsilon <= 0 {
+										fmt.Println("Epsilon mora biti pozitivan broj")
+										continue
+									}
+									break
+								}
+
+								fmt.Println("Unesite delta: ")
+								for {
+									scanner.Scan()
+									input := scanner.Text()
+									var err error
+									delta, err = strconv.ParseFloat(input, 64)
+									if err != nil || delta <= 0 {
+										fmt.Println("Delta mora biti pozitivan broj")
+										continue
+									}
+									break
+								}
+
+								m := Types.CalculateM(epsilon)
+								k := Types.CalculateK(delta)
+								cms := Types.NewCountMinSketch(uint32(k), uint32(m), keyCMS)
+
+								serialized, err := cms.Serialize()
+								if err != nil {
+									fmt.Println("Greska pri serijalizaciji CountMinSketcha", err)
+									continue
+								}
+								records := BlockManager.CreateBinaryRecordsWithFragmentation(false, keyCMS, serialized, blockSize, false) //vrednost ce mi biti serializovana struktura
+								for _, record := range records {
+									blockManager.PutRecord(record)
+								}
+								fmt.Println("SS - One file: ", oneFile)
+								flushedRecords, flushed := memtable.PutRecord(false, keyCMS, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+								fmt.Println("Flushed", flushed)
+								if flushed {
+									sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
+								}
+								fmt.Println("Novi cms uspešno napravljen i stavljen u memtable")
+								continue cmsLoop
+							}
+
+						} else if operacija == "nazad" {
+							break
+						} else {
+							fmt.Println("nepostojeca struktura")
 						}
-					}
+					} //kraj csm loopa
+
+				} else if operacija == "bf" {
+					fmt.Println("Nepostojeca operacija")
 				}
 			}
-		} else {
-			fmt.Println("Nepostojeca operacija")
 		}
 	}
 }
