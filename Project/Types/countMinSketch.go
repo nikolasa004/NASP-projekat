@@ -14,7 +14,7 @@ type CountMinSketch struct {
 	HashFunctions []HashWithSeed
 }
 
-func (cms CountMinSketch) Add(new []byte) {
+func (cms *CountMinSketch) Add(new []byte) {
 	for i, hashFunction := range cms.HashFunctions {
 		index := hashFunction.Hash(new) % uint64(cms.M)
 		cms.Matrix[i][index]++

@@ -171,6 +171,8 @@ func main() {
 								if found {
 									value := record.Value
 									cms, err := Types.Deserialize(value)
+									//fmt.Println("CMS.K =", cms.K, "CMS.M =", cms.M)
+									//fmt.Println("Prvi red:", cms.Matrix[0])
 									if err != nil {
 										fmt.Println("Greška pri deserializaciji: ", err)
 									} else {
@@ -186,6 +188,17 @@ func main() {
 											break
 										}
 										cms.Add([]byte(noviElement))
+										serialized, err := cms.Serialize()
+										if err != nil {
+											fmt.Println("Greška pri serializaciji: ", err)
+											return
+										}
+										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, cms.Key, serialized, blockSize, false)
+										for _, record := range records {
+											blockManager.PutRecord(record)
+										}
+										memtable.PutRecord(false, cms.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+
 										fmt.Println("Element uspešno dodat")
 
 									}
@@ -200,18 +213,28 @@ func main() {
 									if err != nil {
 										fmt.Println("Greška pri deserializaciji: ", err)
 									} else {
-										var noviElement string
+										var newElement string
 										for {
 											fmt.Println("Unesite željeni element: ")
 											scanner.Scan()
-											noviElement = scanner.Text()
-											if noviElement == "" {
+											newElement = scanner.Text()
+											if newElement == "" {
 												fmt.Println("Element ne može biti prazan string!")
 												continue
 											}
 											break
 										}
-										cms.Add([]byte(noviElement))
+										cms.Add([]byte(newElement))
+										serialized, err := cms.Serialize()
+										if err != nil {
+											fmt.Println("Greška pri serializaciji: ", err)
+											return
+										}
+										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, cms.Key, serialized, blockSize, false)
+										for _, record := range records {
+											blockManager.PutRecord(record)
+										}
+										memtable.PutRecord(false, cms.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
 										fmt.Println("Element uspešno dodat")
 
 									}
@@ -297,8 +320,86 @@ func main() {
 
 						} else if operacija == "nazad" {
 							break
+
+						} else if operacija == "izbrisi" {
+							for {
+								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
+								var keyCMS string
+								scanner.Scan()
+								keyCMS = scanner.Text()
+								if keyCMS == "nazad" {
+									continue cmsLoop
+								}
+
+								if !strings.HasPrefix(keyCMS, "cms_") {
+									fmt.Println("Ključ mora početi sa 'cms_'")
+									continue
+								}
+								if _, found := memtable.GetRecord(keyCMS); !found {
+									if _, found := sstable.FindInSstables(keyCMS, *blockManager); !found {
+										fmt.Println("Ne postoji CMS sa tim kljucem.")
+										continue
+									}
+								}
+								//pravimo tombstone
+								records := BlockManager.CreateBinaryRecordsWithFragmentation(true, keyCMS, []byte(""), blockSize, false)
+								for _, record := range records {
+									blockManager.PutRecord(record)
+								}
+								flushedRecords, flushed := memtable.PutRecord(true, keyCMS, "", blockManager, len(blockManager.GetSegments())-1)
+								if flushed {
+									sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
+								}
+								fmt.Println(("CMS uspesno obrisan."))
+								continue cmsLoop
+							}
+						} else if operacija == "prebroj" {
+							for {
+								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
+								var keyCMS string
+								scanner.Scan()
+								keyCMS = scanner.Text()
+								if keyCMS == "nazad" {
+									continue cmsLoop
+								}
+
+								if !strings.HasPrefix(keyCMS, "cms_") {
+									fmt.Println("Ključ mora početi sa 'cms_'")
+									continue
+								}
+
+								var cms *Types.CountMinSketch
+								var err error
+
+								if record, found := memtable.GetRecord(keyCMS); found {
+									cms, err = Types.Deserialize(record.Value)
+									if err != nil {
+										fmt.Println("Greska pri deserializaciji CountMinSketcha (Memtable)", err)
+										continue
+									}
+								} else if SSrecord, found := sstable.FindInSstables(keyCMS, *blockManager); found {
+									cms, err = Types.Deserialize(SSrecord.Value)
+									if err != nil {
+										fmt.Println("Greska pri deserializaciji CountMinSketcha (SSTable):", err)
+										continue
+									}
+								} else {
+									fmt.Println("Nema takvog kljuca.")
+									continue
+								}
+								fmt.Println("Unesite zeljeni element: ")
+								scanner.Scan()
+								element := scanner.Text()
+								if element == "" {
+									fmt.Println("Element ne moze biti prazan!")
+									continue
+								}
+								count := cms.Count([]byte(element))
+								fmt.Printf("Element '%s' se pojavljuje ~ %d puta (procena).\n", element, count)
+								continue cmsLoop
+							}
 						} else {
-							fmt.Println("nepostojeca struktura")
+							fmt.Println("nepostojeca operacija")
 						}
 					} //kraj csm loopa
 
