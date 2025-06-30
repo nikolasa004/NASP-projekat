@@ -43,6 +43,7 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	pomocnik := 8
+OuterLoop:
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
 		var operacija string
@@ -405,6 +406,109 @@ func main() {
 
 				} else if operacija == "bf" {
 					fmt.Println("Nepostojeca operacija")
+				} else if operacija == "nazad" {
+					continue OuterLoop
+				} else if operacija == "sh" {
+					for {
+						fmt.Println("Unesite dodaj za dodavanje novog fingerprinta, udaljenost za hemingovu udaljenst izmedju dva fingerprinta, ili nazad za povratak: ")
+						scanner.Scan()
+						input := scanner.Text()
+
+						if input == "nazad" {
+							break
+						} else if input == "dodaj" {
+							var keySH string
+							for {
+								fmt.Println("Unesite kljuc za fingerprint koji zelite dodati: ")
+								scanner.Scan()
+								keySH = scanner.Text()
+
+								if !strings.HasPrefix(keySH, "sh_") {
+									fmt.Println("Kljuc mora pocinjati sa sh_!")
+									continue
+								}
+								if _, found := memtable.GetRecord(keySH); found {
+									fmt.Println("Kljuc vec postoji!")
+									continue
+								}
+								if _, found := sstable.FindInSstables(keySH, *blockManager); found {
+									fmt.Println("Kljuc vec postoji (SStalbe)!")
+									continue
+								}
+								break
+							}
+							fmt.Println("Unesite tekst: ")
+							scanner.Scan()
+							text := scanner.Text()
+							fmt.Println("TEXT KOJI SE SALJE U ComputeFingerprint:", text)
+							fingerprint := Types.ComputeFingerprint(text)
+							fmt.Println("Fingerprint: ", fingerprint)
+
+							records := BlockManager.CreateBinaryRecordsWithFragmentation(false, keySH, []byte(fingerprint), blockSize, false)
+							for _, record := range records {
+								blockManager.PutRecord(record)
+							}
+							flushedRecords, flushed := memtable.PutRecord(false, keySH, fingerprint, blockManager, len(blockManager.GetSegments())-1)
+							if flushed {
+								sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
+							}
+							fmt.Println("Fingerprint uspesno dodat.")
+						} else if input == "udaljenost" {
+							var keySH1, keySH2 string
+							var v1, v2 *Memtable.MemtableRecord
+							for {
+								fmt.Println("Unesite prvi kljuc: ")
+								scanner.Scan()
+								keySH1 = scanner.Text()
+								if !strings.HasPrefix(keySH1, "sh_") {
+									fmt.Println("Kljuc mora pocinjati sa sh_!")
+									continue
+								}
+								var found bool
+								v1, found = memtable.GetRecord(keySH1)
+								if !found {
+									if val, foundS := sstable.FindInSstables(keySH1, *blockManager); foundS {
+										v1 = &Memtable.MemtableRecord{Value: val.Value}
+									} else {
+										fmt.Println("Kljuc ne postoji")
+										continue
+									}
+
+								}
+								break
+							}
+
+							for {
+								fmt.Println("Unesite drugi kljuc: ")
+								scanner.Scan()
+								keySH2 = scanner.Text()
+								if !strings.HasPrefix(keySH2, "sh_") {
+									fmt.Println("Kljuc mora pocinjati sa sh_!")
+									continue
+								}
+								var found bool
+								v2, found = memtable.GetRecord(keySH1)
+								if !found {
+									if val, foundS := sstable.FindInSstables(keySH1, *blockManager); foundS {
+										v2 = &Memtable.MemtableRecord{Value: val.Value}
+									} else {
+										fmt.Println("Kljuc ne postoji")
+										continue
+									}
+
+								}
+								break
+							}
+
+							dist := Types.HammingDistance(string(v1.Value), string(v2.Value))
+							fmt.Println("Hammingova udaljenost: ", dist)
+
+						} else if operacija == "hll" {
+							fmt.Println("Nepostojeca operacija")
+						} else {
+							fmt.Println("Nepostojeca operacija")
+						}
+					}
 				}
 			}
 		}
