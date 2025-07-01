@@ -43,7 +43,7 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	pomocnik := 8
-OuterLoop:
+	//OuterLoop:
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
 		var operacija string
@@ -143,17 +143,17 @@ OuterLoop:
 		} else if operacija == "Types" {
 			for {
 				fmt.Println("Sa čime želite da radite? Ukucajte cms za Count Min Sketch, hll za HyperLogLog, sh za SimHash, bl za BloomFilter ili nazad da izadjete iz biranja rada sa dostupnim strukturama: ")
-				var operacija string
+				var operacijaTypes string
 				scanner.Scan()
-				operacija = scanner.Text()
-				if operacija == "cms" {
+				operacijaTypes = scanner.Text()
 
+				if operacijaTypes == "cms" {
 				cmsLoop:
 					for {
-						fmt.Println("Unesite željenju operaciju: dodaj za dodavanje elementa, izbrisi za brisanje, prebroj za prebrojavanje željenog elementa i novi za pravljenje novog count min sketch-a ili nazad za povratak na biranje strukture za korišćenje:  ")
-						var operacija string
+						fmt.Println("Unesite željenju operaciju: dodaj, izbrisi, prebroj, novi, nazad")
 						scanner.Scan()
-						operacija = scanner.Text()
+						operacija := scanner.Text()
+
 						if operacija == "dodaj" {
 							for {
 								fmt.Println("Unesite ključ za CMS kojem će se dodati element ili ukucajte nazad da se vratite na odabir operacije: ")
@@ -245,7 +245,7 @@ OuterLoop:
 								fmt.Println("Nema takvog kljuca")
 							}
 
-						} else if operacija == "novi" { //AIDJIADHAIHDAHIDAIDHIADHASIASJ
+						} else if operacija == "novi" {
 							for {
 								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
 								var keyCMS string
@@ -319,9 +319,6 @@ OuterLoop:
 								continue cmsLoop
 							}
 
-						} else if operacija == "nazad" {
-							break
-
 						} else if operacija == "izbrisi" {
 							for {
 								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
@@ -354,6 +351,7 @@ OuterLoop:
 								fmt.Println(("CMS uspesno obrisan."))
 								continue cmsLoop
 							}
+
 						} else if operacija == "prebroj" {
 							for {
 								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
@@ -399,16 +397,247 @@ OuterLoop:
 								fmt.Printf("Element '%s' se pojavljuje ~ %d puta (procena).\n", element, count)
 								continue cmsLoop
 							}
-						} else {
-							fmt.Println("nepostojeca operacija")
-						}
-					} //kraj csm loopa
 
-				} else if operacija == "bf" {
-					fmt.Println("Nepostojeca operacija")
-				} else if operacija == "nazad" {
-					continue OuterLoop
-				} else if operacija == "sh" {
+						} else if operacija == "nazad" {
+							break cmsLoop
+						} else {
+							fmt.Println("Nepoznata operacija.")
+						}
+					}
+
+				} else if operacijaTypes == "hll" {
+				hllLoop:
+					for {
+						fmt.Println("Unesite željenu operaciju za HLL: novi, dodaj, kardinalitet, izbrisi, nazad")
+						scanner.Scan()
+						operacijaHLL := scanner.Text()
+
+						if operacijaHLL == "novi" {
+							for {
+								fmt.Println("Unesite ključ za hll ili nazad za povratak: ")
+								var keyHLL string
+								scanner.Scan()
+								keyHLL = scanner.Text()
+								if keyHLL == "nazad" {
+									continue hllLoop
+								}
+
+								if !strings.HasPrefix(keyHLL, "hll_") {
+									fmt.Println("Ključ mora početi sa 'hll_'")
+									continue
+								}
+
+								//provera da li je unikatan
+								if _, found := memtable.GetRecord(keyHLL); found {
+									fmt.Println("Ključ već postoji(MemTable)")
+									continue
+								}
+								if _, found := sstable.FindInSstables(keyHLL, *blockManager); found {
+									fmt.Println("Ključ već postoji (SSTable)")
+									continue
+								}
+								var p uint8
+								fmt.Println("Unesite preciznost:")
+								//for {
+								scanner.Scan()
+								input := scanner.Text()
+								val, err := strconv.Atoi(input)
+								if err != nil || val < int(Types.HLL_MIN_PRECISION) || val > int(Types.HLL_MAX_PRECISION) {
+									fmt.Println("Preciznost mora biti izmedju 4  i 16")
+									continue
+								}
+								p = uint8(val)
+								hll := Types.NewHLL(p, keyHLL)
+
+								serialized, err := hll.SerializeHLL()
+								if err != nil {
+									fmt.Println("Greska pri serijalizaciji HyperLogLoga", err)
+									continue
+								}
+								records := BlockManager.CreateBinaryRecordsWithFragmentation(false, keyHLL, serialized, blockSize, false) //vrednost ce mi biti serializovana struktura
+								for _, record := range records {
+									blockManager.PutRecord(record)
+								}
+								fmt.Println("SS - One file: ", oneFile)
+								flushedRecords, flushed := memtable.PutRecord(false, keyHLL, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+								fmt.Println("Flushed", flushed)
+								if flushed {
+									sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
+								}
+								fmt.Println("Novi HLL uspešno napravljen i stavljen u memtable")
+								continue hllLoop
+							}
+
+						} else if operacijaHLL == "dodaj" {
+							for {
+								fmt.Println("Unesite ključ za HLL kojem će se dodati element ili ukucajte nazad da se vratite na odabir operacije: ")
+								var kljucHLL string
+								scanner.Scan()
+								kljucHLL = scanner.Text()
+								if kljucHLL == "nazad" {
+									continue hllLoop
+								}
+								if !strings.HasPrefix(kljucHLL, "hll_") {
+
+									fmt.Println("Ključ mora da počinje sa cms_!")
+									continue
+								}
+								record, found := memtable.GetRecord(kljucHLL)
+								if found {
+									value := record.Value
+									hll, err := Types.DeserializeHLL(value)
+									//fmt.Println("CMS.K =", cms.K, "CMS.M =", cms.M)
+									//fmt.Println("Prvi red:", cms.Matrix[0])
+									if err != nil {
+										fmt.Println("Greška pri deserializaciji: ", err)
+									} else {
+										var noviElement string
+										for {
+											fmt.Println(("Unesite željeni element: "))
+											scanner.Scan()
+											noviElement = scanner.Text()
+											if noviElement == "" {
+												fmt.Println("Element ne može biti prazan!")
+												continue
+											}
+											break
+										}
+										hll.Add([]byte(noviElement))
+										serialized, err := hll.SerializeHLL()
+										if err != nil {
+											fmt.Println("Greška pri serializaciji: ", err)
+											return
+										}
+										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, hll.Key, serialized, blockSize, false)
+										for _, record := range records {
+											blockManager.PutRecord(record)
+										}
+										memtable.PutRecord(false, hll.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+
+										fmt.Println("Element uspešno dodat")
+
+									}
+
+									continue hllLoop
+								}
+
+								SSrecord, found := sstable.FindInSstables(kljucHLL, *blockManager)
+								if found {
+									value := SSrecord.Value
+									hll, err := Types.DeserializeHLL(value)
+									if err != nil {
+										fmt.Println("Greška pri deserializaciji: ", err)
+									} else {
+										var newElement string
+										for {
+											fmt.Println("Unesite željeni element: ")
+											scanner.Scan()
+											newElement = scanner.Text()
+											if newElement == "" {
+												fmt.Println("Element ne može biti prazan string!")
+												continue
+											}
+											break
+										}
+										hll.Add([]byte(newElement))
+										serialized, err := hll.SerializeHLL()
+										if err != nil {
+											fmt.Println("Greška pri serializaciji: ", err)
+											return
+										}
+										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, hll.Key, serialized, blockSize, false)
+										for _, record := range records {
+											blockManager.PutRecord(record)
+										}
+										memtable.PutRecord(false, hll.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+										fmt.Println("Element uspešno dodat")
+
+									}
+									continue hllLoop
+
+								}
+								fmt.Println("Nema takvog kljuca")
+							}
+
+						} else if operacijaHLL == "kardinalitet" {
+							for {
+								fmt.Println("Unesite ključ za hll ili nazad za povratak: ")
+								var keyHLL string
+								scanner.Scan()
+								keyHLL = scanner.Text()
+								if keyHLL == "nazad" {
+									continue hllLoop
+								}
+
+								if !strings.HasPrefix(keyHLL, "hll_") {
+									fmt.Println("Ključ mora početi sa 'hll_'")
+									continue
+								}
+
+								var hll *Types.HLL
+								var err error
+
+								if record, found := memtable.GetRecord(keyHLL); found {
+									hll, err = Types.DeserializeHLL(record.Value)
+									if err != nil {
+										fmt.Println("Greska pri deserializaciji HLL-a (Memtable)", err)
+										continue
+									}
+								} else if SSrecord, found := sstable.FindInSstables(keyHLL, *blockManager); found {
+									hll, err = Types.DeserializeHLL(SSrecord.Value)
+									if err != nil {
+										fmt.Println("Greska pri deserializaciji HLL-a (SSTable):", err)
+										continue
+									}
+								} else {
+									fmt.Println("Nema takvog kljuca.")
+									continue
+								}
+								cardinality := hll.Estimate()
+								fmt.Printf("Procenjen broj razlicitih elemenata: %.0f\n ", cardinality)
+								continue hllLoop
+							}
+
+						} else if operacijaHLL == "izbrisi" {
+							for {
+								fmt.Println("Unesite ključ za hll ili nazad za povratak: ")
+								var keyHLL string
+								scanner.Scan()
+								keyHLL = scanner.Text()
+								if keyHLL == "nazad" {
+									continue hllLoop
+								}
+
+								if !strings.HasPrefix(keyHLL, "hll_") {
+									fmt.Println("Ključ mora početi sa 'hll_'")
+									continue
+								}
+								if _, found := memtable.GetRecord(keyHLL); !found {
+									if _, found := sstable.FindInSstables(keyHLL, *blockManager); !found {
+										fmt.Println("Ne postoji HLL sa tim kljucem.")
+										continue
+									}
+								}
+								//pravimo tombstone
+								records := BlockManager.CreateBinaryRecordsWithFragmentation(true, keyHLL, []byte(""), blockSize, false)
+								for _, record := range records {
+									blockManager.PutRecord(record)
+								}
+								flushedRecords, flushed := memtable.PutRecord(true, keyHLL, "", blockManager, len(blockManager.GetSegments())-1)
+								if flushed {
+									sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
+								}
+								fmt.Println(("HLL uspesno obrisan."))
+								continue hllLoop
+							}
+
+						} else if operacijaHLL == "nazad" {
+							break hllLoop
+						} else {
+							fmt.Println("Nepostojeća operacija za HLL")
+						}
+					}
+				} else if operacijaTypes == "sh" {
 					for {
 						fmt.Println("Unesite dodaj za dodavanje novog fingerprinta, udaljenost za hemingovu udaljenst izmedju dva fingerprinta, ili nazad za povratak: ")
 						scanner.Scan()
@@ -503,14 +732,20 @@ OuterLoop:
 							dist := Types.HammingDistance(string(v1.Value), string(v2.Value))
 							fmt.Println("Hammingova udaljenost: ", dist)
 
-						} else if operacija == "hll" {
-							fmt.Println("Nepostojeca operacija")
 						} else {
-							fmt.Println("Nepostojeca operacija")
+							fmt.Println("nepostojeca operacija")
 						}
 					}
+				} else if operacijaTypes == "bl" {
+					break // handle BloomFilter
+				} else if operacijaTypes == "nazad" {
+					break // izlaz iz Types petlje
+				} else {
+					fmt.Println("Nepostojeca operacija")
 				}
 			}
+		} else {
+			fmt.Println("Nepostojeca operacija")
 		}
 	}
 }

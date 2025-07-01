@@ -59,7 +59,7 @@ func (hll *HLL) emptyCount() int {
 	return sum
 }
 
-func newHLL(p uint8, key string) *HLL {
+func NewHLL(p uint8, key string) *HLL {
 	for {
 		if p < HLL_MIN_PRECISION || p > HLL_MAX_PRECISION {
 			fmt.Println("P mora biti izmedju 4 i 16!")
@@ -88,7 +88,7 @@ func (hll *HLL) Add(data []byte) {
 	}
 }
 
-func (hll *HLL) SerializedHLL() ([]byte, error) {
+func (hll *HLL) SerializeHLL() ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	//kljuc
@@ -117,10 +117,18 @@ func (hll *HLL) SerializedHLL() ([]byte, error) {
 	if _, err := buf.Write(hll.Reg); err != nil {
 		return nil, err
 	}
+	// hash funckija
+	seedLen := uint32(len(hll.Hf.Seed))
+	if err := binary.Write(buf, binary.LittleEndian, seedLen); err != nil {
+		return nil, err
+	}
+	if _, err := buf.Write(hll.Hf.Seed); err != nil {
+		return nil, err
+	}
 	return buf.Bytes(), nil
 }
 
-func DesirializeHLL(data []byte) (*HLL, error) {
+func DeserializeHLL(data []byte) (*HLL, error) {
 	buf := bytes.NewReader(data)
 
 	//kljuc
@@ -154,13 +162,22 @@ func DesirializeHLL(data []byte) (*HLL, error) {
 	if _, err := buf.Read(reg); err != nil {
 		return nil, err
 	}
+	// hash
+	var seedLen uint32
+	if err := binary.Read(buf, binary.LittleEndian, &seedLen); err != nil {
+		return nil, err
+	}
+	seed := make([]byte, seedLen)
+	if _, err := buf.Read(seed); err != nil {
+		return nil, err
+	}
 
 	hll := &HLL{
 		Key: key,
 		M:   M,
 		P:   P,
 		Reg: reg,
-		Hf:  CreateHashFunctions(1)[0],
+		Hf:  HashWithSeed{Seed: seed},
 	}
 	if uint64(len(hll.Reg)) != hll.M {
 		return nil, errors.New("nevalidna duzina registra")
