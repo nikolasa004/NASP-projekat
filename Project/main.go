@@ -737,7 +737,270 @@ func main() {
 						}
 					}
 				} else if operacijaTypes == "bl" {
-					break // handle BloomFilter
+				bfLoop:
+					for {
+						fmt.Println("Unesite željenju operaciju: dodaj, izbrisi, postoji, novi, nazad")
+						scanner.Scan()
+						operacija := scanner.Text()
+
+						if operacija == "dodaj" {
+							for {
+								fmt.Println("Unesite ključ za Bloom FIlter kojem će se dodati element ili ukucajte nazad da se vratite na odabir operacije: ")
+								var kljucBF string
+								scanner.Scan()
+								kljucBF = scanner.Text()
+								if kljucBF == "nazad" {
+									continue bfLoop
+								}
+								if !strings.HasPrefix(kljucBF, "bf_") {
+
+									fmt.Println("Ključ mora da počinje sa bf_!")
+									continue
+								}
+								record, found := memtable.GetRecord(kljucBF)
+								if found {
+									value := record.Value
+									bf, err := Types.DeserializeBFWK(value)
+									//fmt.Println("CMS.K =", cms.K, "CMS.M =", cms.M)
+									//fmt.Println("Prvi red:", cms.Matrix[0])
+									if err != nil {
+										fmt.Println("Greška pri deserializaciji: ", err)
+									} else {
+										var noviElement string
+										for {
+											fmt.Println(("Unesite željeni element: "))
+											scanner.Scan()
+											noviElement = scanner.Text()
+											if noviElement == "" {
+												fmt.Println("Element ne može biti prazan!")
+												continue
+											}
+											break
+										}
+										bf.BF.Add(noviElement)
+										serialized, err := bf.SerializeBFWK()
+										if err != nil {
+											fmt.Println("Greška pri serializaciji: ", err)
+											return
+										}
+										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, bf.Key, serialized, blockSize, false)
+										for _, record := range records {
+											blockManager.PutRecord(record)
+										}
+										memtable.PutRecord(false, bf.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+
+										fmt.Println("Element uspešno dodat")
+
+									}
+
+									continue bfLoop
+								}
+
+								SSrecord, found := sstable.FindInSstables(kljucBF, *blockManager)
+								if found {
+									value := SSrecord.Value
+									bf, err := Types.DeserializeBFWK(value)
+									if err != nil {
+										fmt.Println("Greška pri deserializaciji: ", err)
+									} else {
+										var newElement string
+										for {
+											fmt.Println("Unesite željeni element: ")
+											scanner.Scan()
+											newElement = scanner.Text()
+											if newElement == "" {
+												fmt.Println("Element ne može biti prazan string!")
+												continue
+											}
+											break
+										}
+										bf.BF.Add(newElement)
+										serialized, err := bf.SerializeBFWK()
+										if err != nil {
+											fmt.Println("Greška pri serializaciji: ", err)
+											return
+										}
+										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, bf.Key, serialized, blockSize, false)
+										for _, record := range records {
+											blockManager.PutRecord(record)
+										}
+										memtable.PutRecord(false, bf.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+										fmt.Println("Element uspešno dodat")
+
+									}
+									continue bfLoop
+
+								}
+								fmt.Println("Nema takvog kljuca")
+							}
+
+						} else if operacija == "novi" {
+							for {
+								fmt.Println("Unesite ključ za bf ili nazad za povratak: ")
+								var keyBF string
+								scanner.Scan()
+								keyBF = scanner.Text()
+								if keyBF == "nazad" {
+									continue bfLoop
+								}
+
+								if !strings.HasPrefix(keyBF, "bf_") {
+									fmt.Println("Ključ mora početi sa 'cms_'")
+									continue
+								}
+
+								//provera da li je unikatan
+								if _, found := memtable.GetRecord(keyBF); found {
+									fmt.Println("Ključ već postoji(MemTable)")
+									continue
+								}
+								if _, found := sstable.FindInSstables(keyBF, *blockManager); found {
+									fmt.Println("Ključ već postoji (SSTable)")
+									continue
+								}
+								var n int
+								var p float64
+								fmt.Println("Unesite ocekivani broj elemenata:")
+								for {
+									scanner.Scan()
+									input := scanner.Text()
+									var err error
+									n, err = strconv.Atoi(input)
+									if err != nil || n <= 0 {
+										fmt.Println("Mora biti pozitivan ceo broj")
+										continue
+									}
+									break
+								}
+
+								fmt.Println("Unesite dozvoljenu stopu false positive (izmedju 0 i 1): ")
+								for {
+									scanner.Scan()
+									input := scanner.Text()
+									var err error
+									p, err = strconv.ParseFloat(input, 64)
+									if err != nil || p <= 0 || p >= 1 {
+										fmt.Println("Broj mora biti izmedju 0 i 1")
+										continue
+									}
+									break
+								}
+								bf := sstable.NewBloomFilter(n, p)
+								bloomWithKey := Types.BloomFilterWithKey{
+									Key: keyBF,
+									BF:  bf,
+								}
+
+								serialized, err := bloomWithKey.SerializeBFWK()
+								if err != nil {
+									fmt.Println("Greska pri serijalizaciji Bloom Filtera", err)
+									continue
+								}
+								records := BlockManager.CreateBinaryRecordsWithFragmentation(false, keyBF, serialized, blockSize, false) //vrednost ce mi biti serializovana struktura
+								for _, record := range records {
+									blockManager.PutRecord(record)
+								}
+								fmt.Println("SS - One file: ", oneFile)
+								flushedRecords, flushed := memtable.PutRecord(false, keyBF, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+								fmt.Println("Flushed", flushed)
+								if flushed {
+									sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
+								}
+								fmt.Println("Novi bf uspešno napravljen i stavljen u memtable")
+								continue bfLoop
+							}
+
+						} else if operacija == "izbrisi" {
+							for {
+								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
+								var keyBF string
+								scanner.Scan()
+								keyBF = scanner.Text()
+								if keyBF == "nazad" {
+									continue bfLoop
+								}
+
+								if !strings.HasPrefix(keyBF, "bf_") {
+									fmt.Println("Ključ mora početi sa 'bf_'")
+									continue
+								}
+								if _, found := memtable.GetRecord(keyBF); !found {
+									if _, found := sstable.FindInSstables(keyBF, *blockManager); !found {
+										fmt.Println("Ne postoji CMS sa tim kljucem.")
+										continue
+									}
+								}
+								//pravimo tombstone
+								records := BlockManager.CreateBinaryRecordsWithFragmentation(true, keyBF, []byte(""), blockSize, false)
+								for _, record := range records {
+									blockManager.PutRecord(record)
+								}
+								flushedRecords, flushed := memtable.PutRecord(true, keyBF, "", blockManager, len(blockManager.GetSegments())-1)
+								if flushed {
+									sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
+								}
+								fmt.Println(("BF uspesno obrisan."))
+								continue bfLoop
+							}
+
+						} else if operacija == "postoji" {
+							for {
+								fmt.Println("Unesite ključ za bf ili nazad za povratak: ")
+								var keyBF string
+								scanner.Scan()
+								keyBF = scanner.Text()
+								if keyBF == "nazad" {
+									continue bfLoop
+								}
+
+								if !strings.HasPrefix(keyBF, "bf_") {
+									fmt.Println("Ključ mora početi sa 'bf_'")
+									continue
+								}
+
+								var bf *Types.BloomFilterWithKey
+								var err error
+
+								if record, found := memtable.GetRecord(keyBF); found {
+									bf, err = Types.DeserializeBFWK(record.Value)
+									if err != nil {
+										fmt.Println("Greska pri deserializaciji Bloom FIltera (Memtable)", err)
+										continue
+									}
+								} else if SSrecord, found := sstable.FindInSstables(keyBF, *blockManager); found {
+									bf, err = Types.DeserializeBFWK(SSrecord.Value)
+									if err != nil {
+										fmt.Println("Greska pri deserializaciji Bloom FIltera (SSTable):", err)
+										continue
+									}
+								} else {
+									fmt.Println("Nema takvog kljuca.")
+									continue
+								}
+								fmt.Println("Unesite zeljeni element: ")
+								scanner.Scan()
+								element := scanner.Text()
+								if element == "" {
+									fmt.Println("Element ne moze biti prazan!")
+									continue
+								}
+								exists := bf.BF.Check(element)
+								if exists {
+									fmt.Println("Element postoji.")
+								} else {
+									fmt.Println("Element ne postoji.")
+								}
+
+								continue bfLoop
+							}
+
+						} else if operacija == "nazad" {
+							break bfLoop
+						} else {
+							fmt.Println("Nepoznata operacija.")
+						}
+					}
+
 				} else if operacijaTypes == "nazad" {
 					break // izlaz iz Types petlje
 				} else {
