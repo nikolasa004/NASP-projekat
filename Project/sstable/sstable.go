@@ -462,14 +462,15 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 
 		// Pročitaj podatke
 		maxDataOffset := metadata.DataOffset + metadata.DataLength
-		record, found, blockKey, block := FindDataRecordBM(key, offset, filename, blockManager, maxDataOffset)
+		record, found, blockKeys, block := FindDataRecordBM(key, offset, filename, blockManager, maxDataOffset)
 		if !found {
 			return &BlockManager.WalRecord{}, false
 		}
 
-		// Ako je pronadjen record, block se upisuje u buffer pool
-		fmt.Println("upisujem uu buffer pool", blockKey)
-		blockManager.PutBlock(blockKey, block)
+		// Ako je pronadjen record, blok(ovi) se upisuju u buffer pool
+		for i, block := range block {
+			blockManager.PutBlock(blockKeys[i], block)
+		}
 		fmt.Println(blockManager.GetBufferPool().Buffer)
 
 		return record, true
@@ -501,6 +502,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 
 		summary := &Summary{}
 		summary = ReadSummaryFromFile(&blockManager, summaryfile, 0, length)
+		fmt.Println("Summary: ", summary)
 		found, offsetS := summary.Find(key)
 
 		if !found {
@@ -529,13 +531,15 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 		maxDataOffset := uint64(info.Size())
 
 		// Pročitaj podatke
-		record, found, blockKey, block := FindDataRecordBM(key, offset, datafile, blockManager, maxDataOffset)
+		record, found, blockKeys, blocks := FindDataRecordBM(key, offset, datafile, blockManager, maxDataOffset)
 		if !found {
 			return &BlockManager.WalRecord{}, false
 		}
 
-		// Ako je pronadjen record, block se upisuje u buffer pool
-		blockManager.PutBlock(blockKey, block)
+		// Ako je pronadjen record, blok(ovi) se upisuju u buffer pool
+		for i, block := range blocks {
+			blockManager.PutBlock(blockKeys[i], block)
+		}
 
 		return record, true
 	}

@@ -324,7 +324,7 @@ func ReadSummaryFromBlocks(blocks [][]byte) *Summary {
 			fragType := block[cursor+8]
 			offset := binary.LittleEndian.Uint64(block[cursor+9 : cursor+17])
 
-			if keySize == 0 || offset == 0 || cursor+17+int(keySize) > len(block) {
+			if keySize == 0 || cursor+17+int(keySize) > len(block) {
 				break
 			}
 

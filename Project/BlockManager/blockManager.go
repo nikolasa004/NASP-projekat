@@ -745,21 +745,21 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 	startOffset uint64,
 	blockSize int,
 	maxDataOffset uint64,
-) ([]*WalRecord, string, []byte, error) {
+) ([]*WalRecord, []string, [][]byte, error) {
 	blockIdx := int(startOffset / uint64(blockSize))
 	var result []*WalRecord
 	var fragments []WalRecord
-	var block []byte
+	var blocks [][]byte
+	var blockKeys []string
 	expectedType := uint8(1)
 	foundStart := false
 
 	tableIdx, err := ExtractSstableNumber(path)
 
 	if err != nil {
-		return nil, "", block, fmt.Errorf("greška pri ekstrakciji broja sstable iz patha %s: %v", path, err)
+		return nil, blockKeys, blocks, fmt.Errorf("greška pri ekstrakciji broja sstable iz patha %s: %v", path, err)
 	}
 
-	fmt.Println("Index tabele: ", tableIdx)
 	var blockKey string
 
 	for {
@@ -768,7 +768,7 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 			break
 		}
 
-		block = bm.GetWalBlock(path, blockIdx, blockSize, false)
+		block := bm.GetWalBlock(path, blockIdx, blockSize, false)
 		if block == nil {
 			break
 		}
@@ -789,17 +789,23 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 			case record.Type == 0:
 				// Full record
 				result = append(result, &record)
+				blocks = append(blocks, block)
+				blockKeys = append(blockKeys, blockKey)
 
 			case record.Type == 1 && !foundStart:
 				// Start of fragmentation
 				fragments = []WalRecord{record}
 				foundStart = true
 				expectedType = 2
+				blocks = append(blocks, block)
+				blockKeys = append(blockKeys, blockKey)
 
 			case foundStart && record.Type == expectedType:
 				// Valid continuation
 				fragments = append(fragments, record)
 				expectedType++
+				blocks = append(blocks, block)
+				blockKeys = append(blockKeys, blockKey)
 
 			case foundStart && record.Type < expectedType:
 				// Fragmentacija završena
@@ -823,9 +829,9 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 	}
 
 	if len(result) == 0 {
-		return nil, "", block, fmt.Errorf("no records found starting at offset %d", startOffset)
+		return nil, blockKeys, blocks, fmt.Errorf("no records found starting at offset %d", startOffset)
 	}
-	return result, blockKey, block, nil
+	return result, blockKeys, blocks, nil
 }
 
 // Zapisuje Bloom filter u blok u datoteci na datom offsetu.
