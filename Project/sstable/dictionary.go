@@ -1,14 +1,26 @@
 package sstable
 
+import "encoding/binary"
+
 type Dictionary struct { // Struktura mape koja sluzi za kompresiju kljuceva u SSTabeli
 	keysToVals map[string]int // mapira kljuceve na njihove indekse
 	size       int            // broj kljuceva u mapi
+	filename   string
 }
+
+const KEY_SIZE_SIZE = 8
 
 func NewDictionary() *Dictionary {
 	return &Dictionary{
 		keysToVals: make(map[string]int),
 		size:       0,
+	}
+}
+
+func (d *Dictionary) Delete(key string) { // brise kljuc iz mape
+	delete(d.keysToVals, key)
+	if d.size > 0 {
+		d.size-- // smanjuje broj kljuceva u mapi
 	}
 }
 
@@ -25,4 +37,50 @@ func (d *Dictionary) Put(key string) int { // dodaje kljuc u mapu i vraca njegov
 		return d.size - 1 // vraca novu vrednost
 	}
 	return val // ako kljuc vec postoji
+}
+
+func (d *Dictionary) Serialize() []byte {
+	data := make([]byte, 0)
+
+	for key, val := range d.keysToVals {
+		record := make([]byte, 0)         
+		kSizeBytes := make([]byte, KEY_SIZE_SIZE) 
+		valBytes := make([]byte, 4) 
+		
+		binary.LittleEndian.PutUint32(valBytes, uint32(val))
+		keyBytes := []byte(key)
+		binary.LittleEndian.PutUint64(kSizeBytes, uint64(len(keyBytes)))
+		
+		record = append(record, kSizeBytes...)
+		record = append(record, keyBytes...)
+		record = append(record, valBytes...)
+		
+		data = append(data, record...)
+	}
+	return data
+}
+
+//blok menadzer ce da ga upise
+
+func (d *Dictionary) Deserialize(data []byte) {
+
+	for i:= 0; i < len(data); {
+		kSize := binary.LittleEndian.Uint64(data[i : i+KEY_SIZE_SIZE]) // cita velicinu kljuca
+		i += KEY_SIZE_SIZE
+		key := string(data[i : i+int(kSize)]) // cita kljuc
+		i += int(kSize)
+		val := binary.LittleEndian.Uint32(data[i : i+4]) // cita vrednost
+		i += 4
+
+		d.keysToVals[key] = int(val) // dodaje kljuc i vrednost u mapu
+		if d.size <= int(val) {      // ako je nova vrednost veca od broja kljuceva, povecava broj kljuceva
+			d.size = int(val) + 1
+		}
+	}
+	if len(data) > 0 {
+		d.size-- // smanjuje broj kljuceva za 1 jer je poslednji kljuc dodat kao poslednji
+	}
+	if d.size < 0 {
+		d.size = 0 // ako je broj kljuceva manji od 0, postavlja ga na 0
+	}
 }
