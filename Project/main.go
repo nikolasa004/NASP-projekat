@@ -11,6 +11,7 @@ import (
 	"project/sstable"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -78,40 +79,62 @@ func main() {
 
 			fmt.Println("Nema takvog kljuca")
 		} else if operacija == "PUT" {
+
+			const tokenBucketKey = "__rateLimit__"
+			var state *Types.RateLimitState
+			var err error
+			if record, found := memtable.GetRecord(tokenBucketKey); found {
+				state, err = Types.DeserializeRateLimit([]byte(record.Value))
+				if err != nil {
+					fmt.Println("Greška pri čitanju token bucketa iz memtable-a:", err)
+					continue
+				}
+			} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager); found {
+				state, err = Types.DeserializeRateLimit([]byte(SSrecord.Value))
+				if err != nil {
+					fmt.Println("Greška pri čitanju token bucketa iz SSTable-a:", err)
+					continue
+				}
+			} else {
+				fmt.Println("Nema token bucketa. Unesite max broj tokena: ")
+				var cap uint32
+				fmt.Scanln(&cap)
+				fmt.Println("Unesite interval u sekundama: ")
+				var interval int64
+				fmt.Scanln(&interval)
+
+				state = &Types.RateLimitState{
+					StartTime: time.Now().Unix(),
+					Count:     cap,
+					Capacity:  cap,
+					Interval:  interval,
+				}
+
+			}
+			if !state.CanConsumeToken() {
+				fmt.Println("Prekoracenje tokena, pokusajte kasnije.")
+				continue
+			}
+
+			serialized, err := Types.SerializeRateLimit(state)
+			// Upis u blockManager
+			sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
+			for _, r := range sysRecords {
+				blockManager.PutRecord(r)
+			}
+
+			// Upis u memtable
+			flushedSys, sysFlushed := memtable.PutRecord(false, tokenBucketKey, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+			if sysFlushed {
+				sstable.WriteSstable(flushedSys, summarySampleRate, false, oneFile, blockManager)
+			}
+
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
 			kljuc := scanner.Text()
 			fmt.Println("Unesite vrednost: ")
 			scanner.Scan()
 			vrednost := scanner.Text()
-			// kljuc := "key" + strconv.Itoa(pomocnik)
-
-			// var filename string
-			// switch pomocnik {
-			// case 7:
-			// 	filename = "primer.txt"
-			// case 6:
-			// 	filename = "primer1.txt"
-			// case 5:
-			// 	filename = "primer2.txt"
-			// case 4:
-			// 	filename = "primer3.txt"
-			// case 3:
-			// 	filename = "primer4.txt"
-			// case 2:
-			// 	filename = "primer5.txt"
-			// case 1:
-			// 	filename = "primer6.txt"
-			// case 0:
-			// 	continue
-			// }
-
-			// file, err := os.ReadFile(filename)
-			// if err != nil {
-			// 	fmt.Println("Greska pri citanju fajla:", err)
-			// 	continue
-			// }
-			// vrednost := string(file)
 
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize, false) //vrednost ce mi biti serializovana struktura
 			for _, record := range records {

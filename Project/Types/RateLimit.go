@@ -61,12 +61,16 @@ func (r *RateLimitState) CanConsumeToken() bool {
 	elapsed := now - r.StartTime
 
 	//dodaje token ako je prosao interval
+	//	if elapsed >= r.Interval {
+	//		newTokens := uint32(elapsed / r.Interval)
+	//		r.Count += newTokens
+	//		if r.Count > r.Capacity {
+	//			r.Count = r.Capacity
+	//		}
+	//		r.StartTime = now
+	//	}
 	if elapsed >= r.Interval {
-		newTokens := uint32(elapsed / r.Interval)
-		r.Count += newTokens
-		if r.Count > r.Capacity {
-			r.Count = r.Capacity
-		}
+		r.Count = r.Capacity
 		r.StartTime = now
 	}
 	if r.Count == 0 {
