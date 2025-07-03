@@ -972,6 +972,15 @@ func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // azuriram p
 }
 
 func (bm *BlockManager) WriteDictionary(data []byte,filename string) error {
+	if len(data) == 0 {
+		file, err := os.Create(filename)
+		if err != nil {
+			return fmt.Errorf("greška pri kreiranju datoteke %s: %v", filename, err)
+		}
+		defer file.Close()
+		return nil
+	}
+
 	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return fmt.Errorf("greška pri otvaranju datoteke %s: %v", filename, err)
@@ -985,6 +994,13 @@ func (bm *BlockManager) WriteDictionary(data []byte,filename string) error {
 }
 
 func (bm *BlockManager) ReadDictionary(filename string) ([]byte, error) {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		if err := bm.WriteDictionary([]byte{}, filename); err != nil {
+			return nil, fmt.Errorf("greška pri kreiranju datoteke %s: %v", filename, err)
+		}
+		return nil, nil
+	}
+	
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("greška pri otvaranju datoteke %s: %v", filename, err)
@@ -995,7 +1011,7 @@ func (bm *BlockManager) ReadDictionary(filename string) ([]byte, error) {
 		return nil, fmt.Errorf("greška pri čitanju datoteke %s: %v", filename, err)
 	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("datoteka %s je prazna", filename)
+		return nil, nil
 	}
 	return data, nil
 }
