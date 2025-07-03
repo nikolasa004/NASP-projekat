@@ -3,6 +3,7 @@ package BlockManager
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"regexp"
@@ -856,6 +857,7 @@ func (bm *BlockManager) WriteBloomFilter(filterData []byte, filename string) (wr
 	return uint64(n)
 }
 
+
 func stitchFragments(fragments []WalRecord) *WalRecord {
 	fullValue := []byte{}
 	fullKey := []byte{}
@@ -967,4 +969,33 @@ func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // azuriram p
 	if err != nil {
 		panic(err)
 	}
+}
+
+func (bm *BlockManager) WriteDictionary(data []byte,filename string) error {
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return fmt.Errorf("greška pri otvaranju datoteke %s: %v", filename, err)
+	}
+	defer file.Close()
+	_, err = file.Write(data)
+	if err != nil {
+		return fmt.Errorf("greška pri pisanju u datoteku %s: %v", filename, err)
+	}
+	return nil
+}
+
+func (bm *BlockManager) ReadDictionary(filename string) ([]byte, error) {
+	file, err := os.OpenFile(filename, os.O_RDONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("greška pri otvaranju datoteke %s: %v", filename, err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("greška pri čitanju datoteke %s: %v", filename, err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("datoteka %s je prazna", filename)
+	}
+	return data, nil
 }
