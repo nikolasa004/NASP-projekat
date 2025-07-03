@@ -62,7 +62,7 @@ func GenerateSstableFilenames(baseDir string, tableID int) map[string]string {
 	return filenames
 }
 
-func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager) *Sstable {
+func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, dictionary *Dictionary) *Sstable {
 
 	tableId, err := GetNextTableID()
 	if err != nil {
@@ -97,6 +97,15 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	for _, record := range data {
+		val := dictionary.Put(record.Key) // Dodavanje ključeva u rečnik
+		record.Key = fmt.Sprintf("%d", val) // Mapiranje ključeva na nove vrednosti
+	}
+	err = blockManager.WriteDictionary(dictionary.Serialize(), dictionary.filename)
+	if err != nil {
+		log.Fatalf("Failed to write dictionary: %v", err)
 	}
 
 	// Ovo su potreni podaci za kreiranje svih potrebnih struktura
@@ -136,7 +145,7 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	return sstable
 }
 
-func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager) *Sstable {
+func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, dictionary *Dictionary) *Sstable {
 
 	tableId, err := GetNextTableID()
 	if err != nil {
@@ -360,11 +369,11 @@ func ReadMetadata(filename string) (Metadata, error) {
 	return metadata, nil
 }
 
-func WriteSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, oneFile bool, blockManager *BlockManager.BlockManager) *Sstable {
+func WriteSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, oneFile bool, blockManager *BlockManager.BlockManager, dictionary *Dictionary) *Sstable {
 	if oneFile {
-		return NewSstableOneFile(data, sampleRate, compaction, blockManager)
+		return NewSstableOneFile(data, sampleRate, compaction, blockManager, dictionary)
 	}
-	return NewSstable(data, sampleRate, compaction, blockManager)
+	return NewSstable(data, sampleRate, compaction, blockManager, dictionary)
 }
 
 func createFiles(tableID int, oneFile bool) (string, error) {

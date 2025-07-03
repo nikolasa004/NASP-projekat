@@ -5,7 +5,7 @@ import "encoding/binary"
 type Dictionary struct { // Struktura mape koja sluzi za kompresiju kljuceva u SSTabeli
 	keysToVals map[string]int // mapira kljuceve na njihove indekse
 	size       int            // broj kljuceva u mapi
-	filename   string
+	filename   string	 // putanja do fajla u kom se cuva mapa
 }
 
 const KEY_SIZE_SIZE = 8
@@ -14,13 +14,14 @@ func NewDictionary() *Dictionary {
 	return &Dictionary{
 		keysToVals: make(map[string]int),
 		size:       0,
+		filename:   "sstable/dict/dictionary.bin", // putanja do fajla u kom se cuva mapa
 	}
 }
 
 func (d *Dictionary) Delete(key string) { // brise kljuc iz mape
 	delete(d.keysToVals, key)
 	if d.size > 0 {
-		d.size-- // smanjuje broj kljuceva u mapi
+		d.size--
 	}
 }
 
@@ -44,23 +45,22 @@ func (d *Dictionary) Serialize() []byte {
 
 	for key, val := range d.keysToVals {
 		record := make([]byte, 0)         
-		kSizeBytes := make([]byte, KEY_SIZE_SIZE) 
-		valBytes := make([]byte, 4) 
+		kSizeBytes := make([]byte, KEY_SIZE_SIZE)
+		valBytes := make([]byte, 4)  
 		
 		binary.LittleEndian.PutUint32(valBytes, uint32(val))
 		keyBytes := []byte(key)
 		binary.LittleEndian.PutUint64(kSizeBytes, uint64(len(keyBytes)))
 		
-		record = append(record, kSizeBytes...)
-		record = append(record, keyBytes...)
-		record = append(record, valBytes...)
+		record = append(record, kSizeBytes...) // prvo dodajemo velicinu kljuca
+		record = append(record, keyBytes...) // zatim dodajemo kljuc
+		record = append(record, valBytes...) // na kraju dodajemo vrednost
 		
 		data = append(data, record...)
 	}
 	return data
 }
 
-//blok menadzer ce da ga upise
 
 func (d *Dictionary) Deserialize(data []byte) {
 
