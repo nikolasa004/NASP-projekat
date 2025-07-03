@@ -1,6 +1,10 @@
 package sstable
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"fmt"
+	"project/BlockManager"
+)
 
 type Dictionary struct { // Struktura mape koja sluzi za kompresiju kljuceva u SSTabeli
 	keysToVals map[string]int // mapira kljuceve na njihove indekse
@@ -25,19 +29,19 @@ func (d *Dictionary) Delete(key string) { // brise kljuc iz mape
 	}
 }
 
-func (d *Dictionary) Get(key string) (int, bool) { // dobavlja vrednost za dati kljuc ako postoji
+func (d *Dictionary) Get(key string) (string, bool) { // dobavlja vrednost za dati kljuc ako postoji
 	val, exists := d.keysToVals[key]
-	return val, exists
+	return fmt.Sprintf("%d", val), exists
 }
 
-func (d *Dictionary) Put(key string) int { // dodaje kljuc u mapu i vraca njegovu mapiranu vrednost
+func (d *Dictionary) Put(key string) string { // dodaje kljuc u mapu i vraca njegovu mapiranu vrednost
 	val, exist := d.keysToVals[key] // proverava da li kljuc vec postoji
 	if !exist {                     // ako ne postoji, dodaje ga u mapu
 		d.keysToVals[key] = d.size
 		d.size++          // povecava broj kljuceva u mapi
-		return d.size - 1 // vraca novu vrednost
+		return fmt.Sprintf("%d", d.size - 1) // vraca novu vrednost
 	}
-	return val // ako kljuc vec postoji
+	return fmt.Sprintf("%d", val) // ako kljuc vec postoji
 }
 
 func (d *Dictionary) Serialize() []byte {
@@ -62,7 +66,16 @@ func (d *Dictionary) Serialize() []byte {
 }
 
 
-func (d *Dictionary) Deserialize(data []byte) {
+func (d *Dictionary) Deserialize(blockManager *BlockManager.BlockManager) { // ucitava mapu iz fajla
+	data,err := blockManager.ReadDictionary(d.filename)
+	if err != nil {
+		panic("Failed to read dictionary: " + err.Error())
+	}
+	if len(data) == 0 { // ako je mapa prazna, vraca se
+		d.size = 0
+		d.keysToVals = make(map[string]int)
+		return
+	}
 
 	for i:= 0; i < len(data); {
 		kSize := binary.LittleEndian.Uint64(data[i : i+KEY_SIZE_SIZE]) // cita velicinu kljuca

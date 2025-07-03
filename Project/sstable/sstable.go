@@ -100,8 +100,7 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	}
 
 	for _, record := range data {
-		val := dictionary.Put(record.Key) // Dodavanje ključeva u rečnik
-		record.Key = fmt.Sprintf("%d", val) // Mapiranje ključeva na nove vrednosti
+		record.Key = dictionary.Put(record.Key)
 	}
 	err = blockManager.WriteDictionary(dictionary.Serialize(), dictionary.filename)
 	if err != nil {
@@ -183,6 +182,14 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 
 	var metadata Metadata
 	var currentOffset uint64
+
+	for _, record := range data {
+		record.Key = dictionary.Put(record.Key)
+	}
+	err = blockManager.WriteDictionary(dictionary.Serialize(), dictionary.filename)
+	if err != nil {
+		log.Fatalf("Failed to write dictionary: %v", err)
+	}
 
 	filter := NewBloomFilter(len(data), 0.01)
 	for _, record := range data {
@@ -554,7 +561,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 	}
 }
 
-func FindInSstables(key string, blockManager BlockManager.BlockManager) (BlockManager.WalRecord, bool) {
+func FindInSstables(key string, blockManager BlockManager.BlockManager, dictionary *Dictionary) (BlockManager.WalRecord, bool) {
 	masterToc, err := os.OpenFile("data/sstable/master-toc.txt", os.O_RDONLY, 0644)
 	if err != nil {
 		log.Fatal(err)

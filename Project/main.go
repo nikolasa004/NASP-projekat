@@ -30,6 +30,7 @@ func main() {
 
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, cacheSize)
 	compressionDictionary := sstable.NewDictionary()
+	compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
 	flushedReconstructRecords, flushed := memtable.Reconstruct(blockManager) // rekonstrukcija engine-a unosom zapisa iz Wal-a prilikom pokretanja
@@ -67,7 +68,13 @@ func main() {
 				fmt.Println("Nema takvog kljuca")
 				continue
 			}
-			SSrecord, found := sstable.FindInSstables(kljuc, *blockManager)
+			mappedKey, exists := compressionDictionary.Get(kljuc)
+			if !exists {
+				fmt.Println("Nema takvog kljuca u rečniku")
+				continue
+			}
+
+			SSrecord, found := sstable.FindInSstables(mappedKey, *blockManager, compressionDictionary)
 			if found {
 				fmt.Println(string(SSrecord.Value))
 				continue
