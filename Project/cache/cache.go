@@ -2,6 +2,8 @@ package cache
 
 import (
 	"container/list"
+	"fmt"
+	"project/Memtable"
 )
 
 // Entry predstavlja jedan zapis u cache-u
@@ -59,5 +61,34 @@ func (c *LRUCache) RemoveFromCache(key string) {
 	if elem, ok := c.cache[key]; ok {
 		c.list.Remove(elem)
 		delete(c.cache, key)
+	}
+}
+
+func (c *LRUCache) UpdateCache(flushedRecords []*Memtable.MemtableRecord) {
+	for _, record := range flushedRecords {
+		// Pogledaj da li taj ključ postoji u kešu
+		cachedValue, found := c.GetFromCache(record.Key)
+		if !found {
+			// Ako ne postoji u kešu, ignoriši ovaj zapis
+			continue
+		}
+
+		// Ako postoji, proveri da li je ista vrednost
+		if string(cachedValue) == string(record.Value) {
+			// Ako je ista, ništa ne radi
+			continue
+		}
+
+		// Ako je različita vrednost:
+		if record.Tombstone {
+			// Ako je tombstone (brisanje), ukloni iz keša
+			c.RemoveFromCache(record.Key)
+			fmt.Println("Uklonjena vrednost iz keša za ključ: ", record.Key)
+		} else {
+			// Inače ažuriraj vrednost u kešu
+			c.RemoveFromCache(record.Key) // Ukloni staru vrednost ako postoji
+			c.PutInCache(record.Key, record.Value)
+			fmt.Println("Ažurirana vrednost u kešu za ključ: ", record.Key)
+		}
 	}
 }

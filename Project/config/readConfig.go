@@ -13,7 +13,7 @@ type Config struct {
 	BlockManager struct {
 		BlocksInSegment int `json:"blocksInSegment"`
 		BlockSize       int `json:"blockSize"`
-		CacheSize       int `json:"cacheSize"`
+		BlockCacheSize  int `json:"blockCacheSize"`
 	} `json:"BlockManager"`
 
 	Memtable struct {
@@ -27,6 +27,9 @@ type Config struct {
 		OneFile           bool `json:"oneFile"`
 		Compresion        bool `json:"compresion"`
 	} `json:"SSTableManager"`
+	Cache struct {
+		CacheSize int `json:"cacheSize"` // velicina blok keša
+	} `json:"Cache"`
 }
 
 func ReadConfig() Config { //cita konfiguracioni fajl i vraca strukturu Config
@@ -85,9 +88,9 @@ func CheckValidConfig(config *Config) { //proverava da li su vrednosti u konfigu
 		config.BlockManager.BlockSize = 4096 // 4KB
 	}
 
-	if config.BlockManager.CacheSize <= 0 {
+	if config.BlockManager.BlockCacheSize <= 0 {
 		log.Print("Nevalidna velicina blok keša, postavljanje na podrazumevanu vrednost 10")
-		config.BlockManager.CacheSize = 10
+		config.BlockManager.BlockCacheSize = 10
 	}
 
 	if config.Memtable.ImplementType != "SkipList" && config.Memtable.ImplementType != "Hashmap" && config.Memtable.ImplementType != "BTree" {
@@ -109,6 +112,7 @@ func CheckValidConfig(config *Config) { //proverava da li su vrednosti u konfigu
 		log.Print("Nevalidna stopa uzorka za index summary, postavljanje na podrazumevanu vrednost 10")
 		config.SSTableManager.SummarySampleRate = 10
 	}
+
 }
 
 func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
@@ -116,11 +120,11 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 		BlockManager: struct {
 			BlocksInSegment int `json:"blocksInSegment"`
 			BlockSize       int `json:"blockSize"`
-			CacheSize       int `json:"cacheSize"`
+			BlockCacheSize  int `json:"blockCacheSize"`
 		}{
 			BlocksInSegment: 10,
 			BlockSize:       4096,
-			CacheSize:       10,
+			BlockCacheSize:  10,
 		},
 		Memtable: struct {
 			ImplementType string `json:"implementType"`
@@ -139,6 +143,11 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 			SummarySampleRate: 10,
 			OneFile:           true,
 			Compresion:        false,
+		},
+		Cache: struct {
+			CacheSize int `json:"cacheSize"` // velicina blok keša
+		}{
+			CacheSize: 10,
 		},
 	}
 

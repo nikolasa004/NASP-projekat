@@ -6,6 +6,7 @@ import (
 	"os"
 	"project/BlockManager"
 	"project/Memtable"
+	"project/cache"
 	"project/config"
 	"project/sstable"
 	"strconv"
@@ -19,7 +20,7 @@ func main() {
 
 	blockSize := config.BlockManager.BlockSize
 	blocksPerSegment := config.BlockManager.BlocksInSegment
-	cacheSize := config.BlockManager.CacheSize
+	blockCacheSize := config.BlockManager.BlockCacheSize
 
 	implementType := config.Memtable.ImplementType // SkipList, Hashmap ili B-stablo
 	numOfTables := config.Memtable.NumOfTables
@@ -29,15 +30,19 @@ func main() {
 	oneFile := config.SSTableManager.OneFile
 	// compression := config.SSTableManager.Compresion
 
-	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, cacheSize)
+	cacheSize := config.Cache.CacheSize
+
+	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
 	compressionDictionary := sstable.NewDictionary()
 	compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
+
+	cache := cache.NewLRUCache(cacheSize)
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
 	flushedReconstructRecords, flushed := memtable.Reconstruct(blockManager) // rekonstrukcija engine-a unosom zapisa iz Wal-a prilikom pokretanja
 	if flushed {                                                             // moze da dodje do flush-a ako je promenjena konfiguracija
 		for _, recs := range flushedReconstructRecords {
-			sstable.WriteSstable(recs, summarySampleRate, false, oneFile, blockManager,compressionDictionary)
+			sstable.WriteSstable(recs, summarySampleRate, false, oneFile, blockManager, compressionDictionary)
 		}
 	}
 
@@ -69,9 +74,15 @@ func main() {
 				fmt.Println("Nema takvog kljuca")
 				continue
 			}
+
+			if value, found := cache.GetFromCache(kljuc); found {
+				fmt.Println("Iz cache-a" + string(value))
+				continue
+			}
+
 			mappedKey, exists := compressionDictionary.Get(kljuc)
 			if !exists {
-				fmt.Println("Nema takvog kljuca u rečniku")
+				fmt.Println("Nema takvog kljuca")
 				continue
 			}
 
@@ -126,7 +137,8 @@ func main() {
 			flushedRecords, flushed := memtable.PutRecord(false, kljuc, vrednost, blockManager, len(blockManager.GetSegments())-1)
 			fmt.Println("Flushed", flushed)
 			if flushed {
-				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager,compressionDictionary)
+				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, compressionDictionary)
+				cache.UpdateCache(flushedRecords) // ažuriranje keša sa flushed zapisima
 			}
 		} else if operacija == "DELETE" {
 			fmt.Println("Unesite kljuc: ")
@@ -140,7 +152,7 @@ func main() {
 			}
 			flushedRecords, flushed := memtable.PutRecord(true, kljuc, "", blockManager, len(blockManager.GetSegments())-1)
 			if flushed {
-				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager,compressionDictionary)
+				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, compressionDictionary)
 			}
 		} else if operacija == "/" {
 			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal

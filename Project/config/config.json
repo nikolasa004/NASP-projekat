@@ -2,7 +2,7 @@
   "BlockManager": {
     "blocksInSegment": 5,
     "blockSize": 4096,
-    "cacheSize": 10
+    "blockCacheSize": 10
   },
   "Memtable": {
     "implementType": "BTree",
@@ -13,5 +13,8 @@
     "summarySampleRate": 2,
     "oneFile": false,
     "compresion": false
+  },
+  "Cache": {
+    "cacheSize": 10
   }
 }
