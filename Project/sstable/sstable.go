@@ -31,7 +31,7 @@ type Sstable struct {
 
 type Metadata struct {
 	IsSingleFile     uint64
-	HasCompression bool
+	HasCompression   uint64
 	DataOffset       uint64
 	DataLength       uint64
 	IndexOffset      uint64
@@ -370,7 +370,7 @@ func ReadMetadata(filename string) (Metadata, error) {
 	fileSize := stat.Size()
 
 	// Pozicioniraj pokazivač na početak metapodataka
-	_, err = file.Seek(fileSize-88, io.SeekStart)
+	_, err = file.Seek(fileSize-96, io.SeekStart)
 	if err != nil {
 		return metadata, err
 	}
@@ -500,7 +500,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 		}
 		key = compressedKey
 	}
-	fmt.Println("Buffer pool: ", blockManager.GetBufferPool().Buffer)
+	// fmt.Println("Buffer pool: ", blockManager.GetBufferPool().Buffer)
 	if oneFile {
 		filename = files[0]
 		filename = strings.TrimSpace(filename)
@@ -525,7 +525,6 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 		if !filter.Check(key) {
 			return &BlockManager.WalRecord{}, false
 		}
-
 		// Proveri da li je ključ u summary-ju
 		summary := &Summary{}
 		summary = ReadSummaryFromFile(&blockManager, filename, metadata.SummaryOffset, metadata.SummaryLength)
@@ -534,7 +533,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 		if !found {
 			return &BlockManager.WalRecord{}, false
 		}
-
+		
 		// Proveri da li je ključ u indexu
 		var index *Index
 		keyOffsetPairs := ReadIndexFromFile(&blockManager, filename, offset, metadata.IndexLength)
@@ -557,7 +556,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 		for i, block := range block {
 			blockManager.PutBlock(blockKeys[i], block)
 		}
-		fmt.Println(blockManager.GetBufferPool().Buffer)
+		// fmt.Println(blockManager.GetBufferPool().Buffer)
 
 		return record, true
 
@@ -588,7 +587,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 
 		summary := &Summary{}
 		summary = ReadSummaryFromFile(&blockManager, summaryfile, 0, length)
-		fmt.Println("Summary: ", summary)
+		// fmt.Println("Summary: ", summary)
 		found, offsetS := summary.Find(key)
 
 		if !found {
