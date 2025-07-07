@@ -99,12 +99,33 @@ func (d *Dictionary) Deserialize(blockManager *BlockManager.BlockManager) { // u
 	}
 }
 
-func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager ,records []*Memtable.MemtableRecord) {
+// func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager ,records []*Memtable.MemtableRecord) {
+// 	for _, record := range records {
+// 		record.Key = d.Put(record.Key)
+// 	}
+// 	err := blockManager.WriteDictionary(d.Serialize(), d.filename)
+// 	if err != nil {
+// 		log.Fatalf("Failed to write dictionary: %v", err)
+// 	}
+// }
+
+func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager ,records []*Memtable.MemtableRecord) []*Memtable.MemtableRecord {
+	compressedRecords := make([]*Memtable.MemtableRecord, 0, len(records))
+	
+	// Kreiraj nove rekorde sa kompresovanim ključevima, ostavi originalne netaknute
 	for _, record := range records {
-		record.Key = d.Put(record.Key)
+		compressedRecord := &Memtable.MemtableRecord{
+			Key:       d.Put(record.Key), // kompresovan ključ
+			Value:     record.Value,
+			Timestamp: record.Timestamp,
+			Tombstone: record.Tombstone,
+		}
+		compressedRecords = append(compressedRecords, compressedRecord)
 	}
+	
 	err := blockManager.WriteDictionary(d.Serialize(), d.filename)
 	if err != nil {
 		log.Fatalf("Failed to write dictionary: %v", err)
 	}
+	return compressedRecords
 }

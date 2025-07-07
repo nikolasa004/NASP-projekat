@@ -483,7 +483,7 @@ func createFiles(tableID int, oneFile bool) (string, error) {
 	return tableDir, nil
 }
 
-func FindInSstable(key string, filename string, blockManager BlockManager.BlockManager) (*BlockManager.WalRecord, bool) {
+func FindInSstable(key string, filename string, blockManager BlockManager.BlockManager, dictionary *Dictionary) (*BlockManager.WalRecord, bool) {
 	var toc TOC
 	var err error
 	toc, err = ReadTOCFile(filename)
@@ -492,6 +492,14 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 	}
 	oneFile := toc.SingleFile
 	files := toc.Files
+	isCompressed := toc.HasCompression
+	if isCompressed {
+		compressedKey, found := dictionary.Get(key)
+		if !found {
+			log.Fatalf("Failed to get key from dictionary: %v", err)
+		}
+		key = compressedKey
+	}
 	fmt.Println("Buffer pool: ", blockManager.GetBufferPool().Buffer)
 	if oneFile {
 		filename = files[0]
@@ -641,7 +649,7 @@ func FindInSstables(key string, blockManager BlockManager.BlockManager, dictiona
 		dir := directories[i]
 		tocfilename := "data/sstable/" + dir + "/" + dir + "-TOC.txt"
 
-		dataRecord, found := FindInSstable(key, tocfilename, blockManager)
+		dataRecord, found := FindInSstable(key, tocfilename, blockManager, dictionary)
 		if found {
 			if !dataRecord.Tombstone {
 				// Ako je pronađen i nije tombstone, odmah vraćamo

@@ -87,15 +87,10 @@ func main() {
 				continue
 			}
 
-			mappedKey, exists := compressionDictionary.Get(kljuc)
-			if !exists {
-				fmt.Println("Nema takvog kljuca")
-				continue
-			}
-
-			SSrecord, found := sstable.FindInSstables(mappedKey, *blockManager, compressionDictionary)
+			SSrecord, found := sstable.FindInSstables(kljuc, *blockManager, compressionDictionary)
 			if found {
 				fmt.Println(string(SSrecord.Value))
+				cache.PutInCache(kljuc, SSrecord.Value) // dodavanje u keš
 				continue
 			}
 
@@ -145,9 +140,12 @@ func main() {
 			fmt.Println("Flushed", flushed)
 			if flushed {
 				if hasCompression {
-					compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
+					compressedRecords := compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
+					sstable.WriteSstable(compressedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression)
+				} else {
+					sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression)
 				}
-				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression)
+				//ovde sam ostavio da se keš ažurira sa flushed zapisima, a ne sa kompresovanim
 				cache.UpdateCache(flushedRecords) // ažuriranje keša sa flushed zapisima
 			}
 		} else if operacija == "DELETE" {
