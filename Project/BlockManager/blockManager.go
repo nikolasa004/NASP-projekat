@@ -388,8 +388,12 @@ func (blockManager *BlockManager) GetBlock(key string) []byte { //funkcija koja 
 }
 
 func (blockManager *BlockManager) PutBlock(key string, value []byte) { //funkcija koja dodaje blok prvo u bafer pool, a ako se vrati blok koji je izmenjen, upisuje ga u WAL
+	newBlock := false
+	if key[0] == 'B' {
+		newBlock = true
+	}
 
-	returnedValue, keyFromFlush := blockManager.bufferPool.Put(key, value, true)
+	returnedValue, keyFromFlush := blockManager.bufferPool.Put(key, value, newBlock)
 
 	if returnedValue != nil { //ako je vracen blok znaci da je on izmenjen u bafer pool-u i treba ga upisati na disk
 		parts := strings.Split(keyFromFlush, "-")
@@ -498,7 +502,7 @@ func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja doda
 func (blockManager *BlockManager) PutSstableBlock(tableId int, blockIdx int, value []byte, path string) {
 	key := fmt.Sprintf("sstable-%d-%d", tableId, blockIdx)
 
-	blockManager.bufferPool.Put(key, value, true)                          //stavljamo blok u bafer pool
+	blockManager.bufferPool.Put(key, value, false)                         //stavljamo blok u bafer pool
 	blockManager.WriteBlock(value, blockManager.blockSize, blockIdx, path) //upisujemo blok u sstable fajl
 }
 
@@ -857,7 +861,6 @@ func (bm *BlockManager) WriteBloomFilter(filterData []byte, filename string) (wr
 	return uint64(n)
 }
 
-
 func stitchFragments(fragments []WalRecord) *WalRecord {
 	fullValue := []byte{}
 	fullKey := []byte{}
@@ -971,7 +974,7 @@ func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // azuriram p
 	}
 }
 
-func (bm *BlockManager) WriteDictionary(data []byte,filename string) error {
+func (bm *BlockManager) WriteDictionary(data []byte, filename string) error {
 	if len(data) == 0 {
 		file, err := os.Create(filename)
 		if err != nil {
@@ -1000,7 +1003,7 @@ func (bm *BlockManager) ReadDictionary(filename string) ([]byte, error) {
 		}
 		return nil, nil
 	}
-	
+
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("greška pri otvaranju datoteke %s: %v", filename, err)

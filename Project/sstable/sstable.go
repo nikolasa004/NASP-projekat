@@ -3,6 +3,7 @@ package sstable
 import (
 	"bufio"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -18,23 +19,26 @@ type TOC struct {
 }
 
 type Sstable struct {
-	Filename        string
-	DataFilename    string
-	IndexFilename   string
-	SummaryFilename string
-	FilterFilename  string
+	Filename           string
+	DataFilename       string
+	IndexFilename      string
+	SummaryFilename    string
+	FilterFilename     string
+	MerkleTreeFilename string
 }
 
 type Metadata struct {
-	IsSingleFile  uint64
-	DataOffset    uint64
-	DataLength    uint64
-	IndexOffset   uint64
-	IndexLength   uint64
-	SummaryOffset uint64
-	SummaryLength uint64
-	FilterOffset  uint64
-	FilterLength  uint64
+	IsSingleFile     uint64
+	DataOffset       uint64
+	DataLength       uint64
+	IndexOffset      uint64
+	IndexLength      uint64
+	SummaryOffset    uint64
+	SummaryLength    uint64
+	FilterOffset     uint64
+	FilterLength     uint64
+	MerkleTreeOffset uint64
+	MerkleTreeLength uint64
 }
 
 func NewRecord(key string, value []byte, tombstone bool, timestamp uint64) DataRecord {
@@ -57,6 +61,7 @@ func GenerateSstableFilenames(baseDir string, tableID int) map[string]string {
 		"Index":   fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Index.bin", baseDir, tableID, tableID),
 		"Summary": fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Summary.bin", baseDir, tableID, tableID),
 		"TOC":     fmt.Sprintf("%s/sstable-%04d/sstable-%04d-TOC.txt", baseDir, tableID, tableID),
+		"Merkle":  fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Merkle.bin", baseDir, tableID, tableID),
 	}
 
 	return filenames
@@ -78,11 +83,12 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	filenames := GenerateSstableFilenames("data/sstable", tableId)
 
 	sstable := &Sstable{
-		Filename:        filenames["TOC"],
-		DataFilename:    filenames["Data"],
-		IndexFilename:   filenames["Index"],
-		SummaryFilename: filenames["Summary"],
-		FilterFilename:  filenames["Filter"],
+		Filename:           filenames["TOC"],
+		DataFilename:       filenames["Data"],
+		IndexFilename:      filenames["Index"],
+		SummaryFilename:    filenames["Summary"],
+		FilterFilename:     filenames["Filter"],
+		MerkleTreeFilename: filenames["Merkle"],
 	}
 
 	// Kreiranje fajlova
@@ -90,7 +96,7 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 
 	// TOC fajl
 	toc := TOC{
-		Files: []string{sstable.DataFilename, sstable.IndexFilename, sstable.SummaryFilename, sstable.FilterFilename},
+		Files: []string{sstable.DataFilename, sstable.IndexFilename, sstable.SummaryFilename, sstable.FilterFilename, sstable.MerkleTreeFilename},
 	}
 
 	err = WriteTOCFile(filenames["TOC"], false, toc.Files)
@@ -139,6 +145,18 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	summary := NewSummary(summaryKeys, summaryOffsets, sstable.SummaryFilename, sampleRate)
 	summary.writeWithBM(true, 0, blockManager)
 
+	var allData [][]byte
+	for _, record := range data {
+		combined := []byte(record.Key + string(record.Value))
+		allData = append(allData, combined)
+	}
+	root := BuildTree(allData) // Pretpostavljam da imaš ovu funkciju iz merkle_tree.go
+	err = SaveMerkleTree(root, sstable.MerkleTreeFilename)
+	if err != nil {
+		log.Fatalf("Neuspešno čuvanje Merkle stabla: %v", err)
+	}
+	log.Printf("Merkle stablo uspešno sačuvano u %s\n", sstable.MerkleTreeFilename)
+
 	UpdateMasterTOC(fmt.Sprintf("sstable-%04d", tableId))
 
 	return sstable
@@ -160,11 +178,12 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 	filename := fmt.Sprintf("data/sstable/sstable-%04d/sstable-%04d", tableId, tableId)
 
 	sstable := &Sstable{
-		Filename:        filename + ".bin",
-		DataFilename:    filename + ".bin",
-		IndexFilename:   filename + ".bin",
-		SummaryFilename: filename + ".bin",
-		FilterFilename:  filename + ".bin",
+		Filename:           filename + ".bin",
+		DataFilename:       filename + ".bin",
+		IndexFilename:      filename + ".bin",
+		SummaryFilename:    filename + ".bin",
+		FilterFilename:     filename + ".bin",
+		MerkleTreeFilename: filename + ".bin",
 	}
 
 	// Kreiranje fajla
@@ -238,6 +257,34 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 	metadata.SummaryLength = summaryLength
 	currentOffset += summaryLength
 
+	var allData [][]byte
+	for _, record := range data {
+		combined := []byte(record.Key + string(record.Value))
+		allData = append(allData, combined)
+	}
+
+	root := BuildTree(allData) // iz merkle_tree.go
+	merkleJSON, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		log.Fatalf("Neuspešno serijalizovanje Merkle stabla: %v", err)
+	}
+	log.Printf("Merkle stablo uspešno serijalizovano, dužina: %d bajtova\n", len(merkleJSON))
+
+	metadata.MerkleTreeOffset = currentOffset           // novo
+	metadata.MerkleTreeLength = uint64(len(merkleJSON)) // novo
+
+	// Upis Merkle stabla direktno u .bin fajl – novo
+	file, err := os.OpenFile(sstable.Filename, os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatalf("Neuspešno otvaranje fajla za Merkle: %v", err)
+	}
+	defer file.Close()
+
+	_, err = file.Write(merkleJSON)
+	if err != nil {
+		log.Fatalf("Neuspešno pisanje Merkle stabla u fajl: %v", err)
+	}
+
 	err = WriteMetadata(sstable.Filename, metadata)
 
 	if err != nil {
@@ -300,6 +347,14 @@ func WriteMetadata(filename string, metadata Metadata) error {
 	if err != nil {
 		return err
 	}
+	err = binary.Write(file, binary.LittleEndian, metadata.MerkleTreeOffset)
+	if err != nil {
+		return err
+	}
+	err = binary.Write(file, binary.LittleEndian, metadata.MerkleTreeLength)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -322,7 +377,7 @@ func ReadMetadata(filename string) (Metadata, error) {
 	fileSize := stat.Size()
 
 	// Pozicioniraj pokazivač na početak metapodataka
-	_, err = file.Seek(fileSize-72, io.SeekStart)
+	_, err = file.Seek(fileSize-88, io.SeekStart)
 	if err != nil {
 		return metadata, err
 	}
@@ -372,6 +427,14 @@ func ReadMetadata(filename string) (Metadata, error) {
 	if err != nil {
 		return metadata, err
 	}
+	err = binary.Read(file, binary.LittleEndian, &metadata.MerkleTreeOffset)
+	if err != nil {
+		return metadata, err
+	}
+	err = binary.Read(file, binary.LittleEndian, &metadata.MerkleTreeLength)
+	if err != nil {
+		return metadata, err
+	}
 
 	return metadata, nil
 }
@@ -398,7 +461,7 @@ func createFiles(tableID int, oneFile bool) (string, error) {
 	if !oneFile {
 		fileNames := GenerateSstableFilenames("", tableID)
 
-		fileNamesList := []string{fileNames["Data"], fileNames["Filter"], fileNames["Index"], fileNames["Summary"], fileNames["TOC"]}
+		fileNamesList := []string{fileNames["Data"], fileNames["Filter"], fileNames["Index"], fileNames["Summary"], fileNames["Merkle"], fileNames["TOC"]}
 
 		for _, name := range fileNamesList {
 			filePath := fmt.Sprintf("%s%s", tableDir, name)
@@ -655,4 +718,87 @@ func ReadTOCFile(filename string) (TOC, error) {
 	}
 
 	return toc, nil
+}
+func ReadSSTable(filename string, bm *BlockManager.BlockManager, dictionary *Dictionary) ([][]byte, error) {
+	metadata, err := ReadMetadata(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	records, _, _, err := bm.ReadSstableRecordsFromBlocks(filename, metadata.DataOffset, bm.GetBlockSize(), metadata.DataOffset+metadata.DataLength)
+	if err != nil {
+		return nil, err
+	}
+
+	var allData [][]byte
+	for _, record := range records {
+		if !record.Tombstone {
+			// 2. Dobavi kompresovani ključ iz dictionary-ja
+			compressedKey, exist := dictionary.Get(record.Key) // ili Get(record.Key) ako imaš Get
+			if !exist {
+				fmt.Printf("Ključ [%s] nije pronađen u dictionary-ju!\n", record.Key)
+				continue // Preskoči ovaj record ako ključ nije pronađen
+			}
+			fmt.Printf("ULAZ u Merkle: KEY=[%s] (compressed [%s]) VAL=[%s]\n", record.Key, compressedKey, record.Value)
+			// 3. Kombinuj kompresovani ključ i vrednost
+			combined := append([]byte(compressedKey), record.Value...)
+			allData = append(allData, combined)
+		}
+	}
+	return allData, nil
+}
+
+func ReadSSTableMultiMode(tocFile string, bm *BlockManager.BlockManager, dictionary *Dictionary) ([][]byte, error) {
+	fmt.Println("Čitam SSTable multi file:", tocFile)
+	toc, err := ReadTOCFile(tocFile)
+	if err != nil {
+		return nil, err
+	}
+
+	dataFile := toc.Files[0]
+	info, err := os.Stat(dataFile)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("Veličina data fajla:", info.Size())
+
+	records, _, _, err := bm.ReadSstableRecordsFromBlocks(dataFile, 0, bm.GetBlockSize(), uint64(info.Size()))
+	fmt.Printf("ReadSstableRecordsFromBlocks: file=%s, offset=0, blocksize=%d, end=%d\n", dataFile, bm.GetBlockSize(), uint64(info.Size()))
+
+	if err != nil {
+		return nil, err
+	}
+
+	var allData [][]byte
+	for _, record := range records {
+		if !record.Tombstone {
+			// Dodaj dictionary obradu kao u prvoj funkciji:
+			compressedKey, exist := dictionary.Get(record.Key) // ili dictionary.Get(record.Key)
+			if !exist {
+				fmt.Printf("Ključ [%s] nije pronađen u dictionary-ju!\n", record.Key)
+				continue // Preskoči ovaj record ako ključ nije pronađen
+			}
+			fmt.Printf("ULAZ u Merkle: KEY=[%s] (compressed [%s]) VAL=[%s]\n", record.Key, compressedKey, record.Value)
+			combined := append([]byte(compressedKey), record.Value...)
+			allData = append(allData, combined)
+		}
+	}
+	return allData, nil
+}
+
+func FindTOCPath(sstableName string) (string, error) {
+	masterToc, err := os.Open("data/sstable/master-toc.txt")
+	if err != nil {
+		return "", err
+	}
+	defer masterToc.Close()
+
+	scanner := bufio.NewScanner(masterToc)
+	for scanner.Scan() {
+		dir := strings.TrimSpace(scanner.Text())
+		if strings.Contains(dir, sstableName) { // Možeš i preciznije == ako želiš baš tačan match
+			return fmt.Sprintf("data/sstable/%s/%s-TOC.txt", dir, sstableName), nil
+		}
+	}
+	return "", fmt.Errorf("nema SSTable sa tim imenom: %s", sstableName)
 }

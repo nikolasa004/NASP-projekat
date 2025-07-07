@@ -32,6 +32,8 @@ func main() {
 
 	cacheSize := config.Cache.CacheSize
 
+	os.MkdirAll("sstable/dict", os.ModePerm)
+
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
 	compressionDictionary := sstable.NewDictionary()
 	compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
@@ -153,6 +155,15 @@ func main() {
 			flushedRecords, flushed := memtable.PutRecord(true, kljuc, "", blockManager, len(blockManager.GetSegments())-1)
 			if flushed {
 				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, compressionDictionary)
+			}
+		} else if operacija == "VERIFY" {
+			fmt.Println("Unesite ime SSTable TOC fajla: ")
+			scanner.Scan()
+			userInput := scanner.Text()
+
+			err := sstable.VerifySstableMerkle(userInput, blockManager, compressionDictionary)
+			if err != nil {
+				fmt.Println(err)
 			}
 		} else if operacija == "/" {
 			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal
