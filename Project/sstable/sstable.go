@@ -16,6 +16,7 @@ import (
 
 type TOC struct {
 	SingleFile bool
+	HasCompression bool
 	Files      []string
 }
 
@@ -30,6 +31,7 @@ type Sstable struct {
 
 type Metadata struct {
 	IsSingleFile     uint64
+	HasCompression bool
 	DataOffset       uint64
 	DataLength       uint64
 	IndexOffset      uint64
@@ -68,7 +70,7 @@ func GenerateSstableFilenames(baseDir string, tableID int) map[string]string {
 	return filenames
 }
 
-func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, dictionary *Dictionary) *Sstable {
+func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, compression bool) *Sstable {
 
 	tableId, err := GetNextTableID()
 	if err != nil {
@@ -100,18 +102,10 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 		Files: []string{sstable.DataFilename, sstable.IndexFilename, sstable.SummaryFilename, sstable.FilterFilename, sstable.MerkleTreeFilename},
 	}
 
-	err = WriteTOCFile(filenames["TOC"], false, toc.Files)
+	err = WriteTOCFile(filenames["TOC"], false, toc.Files, compression)
 
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	for _, record := range data {
-		record.Key = dictionary.Put(record.Key)
-	}
-	err = blockManager.WriteDictionary(dictionary.Serialize(), dictionary.filename)
-	if err != nil {
-		log.Fatalf("Failed to write dictionary: %v", err)
 	}
 
 	// Ovo su potreni podaci za kreiranje svih potrebnih struktura
@@ -163,7 +157,7 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	return sstable
 }
 
-func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, dictionary *Dictionary) *Sstable {
+func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, compression bool) *Sstable {
 
 	tableId, err := GetNextTableID()
 	if err != nil {
@@ -193,23 +187,16 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 	toc := TOC{
 		SingleFile: true,
 		Files:      []string{sstable.Filename},
+		HasCompression: compression,
 	}
 
-	err = WriteTOCFile(filename+"-TOC.txt", toc.SingleFile, toc.Files)
+	err = WriteTOCFile(filename+"-TOC.txt", toc.SingleFile, toc.Files, toc.HasCompression)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	var metadata Metadata
 	var currentOffset uint64
-
-	for _, record := range data {
-		record.Key = dictionary.Put(record.Key)
-	}
-	err = blockManager.WriteDictionary(dictionary.Serialize(), dictionary.filename)
-	if err != nil {
-		log.Fatalf("Failed to write dictionary: %v", err)
-	}
 
 	filter := NewBloomFilter(len(data), 0.01)
 	for _, record := range data {
@@ -309,6 +296,11 @@ func WriteMetadata(filename string, metadata Metadata) error {
 		return err
 	}
 
+	err = binary.Write(file, binary.LittleEndian, metadata.HasCompression)
+	if err != nil {
+		return err
+	}
+
 	err = binary.Write(file, binary.LittleEndian, metadata.IsSingleFile)
 	if err != nil {
 		return err
@@ -383,7 +375,13 @@ func ReadMetadata(filename string) (Metadata, error) {
 		return metadata, err
 	}
 
+
 	// Čitaj polja redom kako su zapisana
+	err = binary.Read(file, binary.LittleEndian, &metadata.HasCompression)
+	if err != nil {
+		return metadata, err
+	}
+
 	err = binary.Read(file, binary.LittleEndian, &metadata.IsSingleFile)
 	if err != nil {
 		return metadata, err
@@ -440,11 +438,11 @@ func ReadMetadata(filename string) (Metadata, error) {
 	return metadata, nil
 }
 
-func WriteSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, oneFile bool, blockManager *BlockManager.BlockManager, dictionary *Dictionary) *Sstable {
+func WriteSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, oneFile bool, blockManager *BlockManager.BlockManager, compression bool) *Sstable {
 	if oneFile {
-		return NewSstableOneFile(data, sampleRate, compaction, blockManager, dictionary)
+		return NewSstableOneFile(data, sampleRate, compaction, blockManager, compression)
 	}
-	return NewSstable(data, sampleRate, compaction, blockManager, dictionary)
+	return NewSstable(data, sampleRate, compaction, blockManager, compression)
 }
 
 func createFiles(tableID int, oneFile bool) (string, error) {
@@ -660,7 +658,7 @@ func FindInSstables(key string, blockManager BlockManager.BlockManager, dictiona
 }
 
 // Napravio sam TOC file kako bi lakse mogao da se pristupi svim fajlovima
-func WriteTOCFile(filename string, singleFile bool, files []string) error {
+func WriteTOCFile(filename string, singleFile bool, files []string, hasCompression bool) error {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -668,6 +666,14 @@ func WriteTOCFile(filename string, singleFile bool, files []string) error {
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
+
+	compression := "0"
+	if hasCompression {
+		compression = "1"
+	}
+	if _, err := writer.WriteString(compression + "\n"); err != nil {
+		return err
+	}
 
 	mode := "0"
 	if singleFile {
@@ -699,6 +705,13 @@ func ReadTOCFile(filename string) (TOC, error) {
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
+	compression, err := reader.ReadString('\n')
+	if err != nil {
+		return toc, err
+	}
+
+	compression = strings.TrimSpace(compression)
+	toc.HasCompression = compression[0] == '1'
 
 	mode, err := reader.ReadString('\n')
 	if err != nil {

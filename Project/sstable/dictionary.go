@@ -3,7 +3,9 @@ package sstable
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"project/BlockManager"
+	"project/Memtable"
 )
 
 type Dictionary struct { // Struktura mape koja sluzi za kompresiju kljuceva u SSTabeli
@@ -97,18 +99,12 @@ func (d *Dictionary) Deserialize(blockManager *BlockManager.BlockManager) { // u
 	}
 }
 
-func LoadDictionaryFromFile(path string, bm *BlockManager.BlockManager) *Dictionary {
-	dict := NewDictionary()
-	dict.filename = path
-	dict.Deserialize(bm)
-	return dict
-}
-func (d *Dictionary) Clone() *Dictionary {
-	newDict := NewDictionary()
-	for k, v := range d.keysToVals {
-		newDict.keysToVals[k] = v
+func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager ,records []*Memtable.MemtableRecord) {
+	for _, record := range records {
+		record.Key = d.Put(record.Key)
 	}
-	newDict.size = d.size
-	newDict.filename = d.filename // ili "" ako želiš temporary dictionary
-	return newDict
+	err := blockManager.WriteDictionary(d.Serialize(), d.filename)
+	if err != nil {
+		log.Fatalf("Failed to write dictionary: %v", err)
+	}
 }

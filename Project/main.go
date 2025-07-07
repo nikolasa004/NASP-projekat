@@ -28,23 +28,28 @@ func main() {
 
 	summarySampleRate := config.SSTableManager.SummarySampleRate
 	oneFile := config.SSTableManager.OneFile
-	// compression := config.SSTableManager.Compresion
+	hasCompression := config.SSTableManager.Compression
 
 	cacheSize := config.Cache.CacheSize
 
 	os.MkdirAll("sstable/dict", os.ModePerm)
 
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
-	compressionDictionary := sstable.NewDictionary()
-	compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
-
+	var compressionDictionary *sstable.Dictionary
+	if hasCompression {
+		compressionDictionary := sstable.NewDictionary()
+		compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
+	}
 	cache := cache.NewLRUCache(cacheSize)
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
 	flushedReconstructRecords, flushed := memtable.Reconstruct(blockManager) // rekonstrukcija engine-a unosom zapisa iz Wal-a prilikom pokretanja
 	if flushed {                                                             // moze da dodje do flush-a ako je promenjena konfiguracija
 		for _, recs := range flushedReconstructRecords {
-			sstable.WriteSstable(recs, summarySampleRate, false, oneFile, blockManager, compressionDictionary)
+			if hasCompression {
+				compressionDictionary.StoreKeys(blockManager, recs)
+			}
+			sstable.WriteSstable(recs, summarySampleRate, false, oneFile, blockManager, hasCompression)
 		}
 	}
 
@@ -139,7 +144,10 @@ func main() {
 			flushedRecords, flushed := memtable.PutRecord(false, kljuc, vrednost, blockManager, len(blockManager.GetSegments())-1)
 			fmt.Println("Flushed", flushed)
 			if flushed {
-				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, compressionDictionary)
+				if hasCompression {
+					compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
+				}
+				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression)
 				cache.UpdateCache(flushedRecords) // ažuriranje keša sa flushed zapisima
 			}
 		} else if operacija == "DELETE" {
@@ -154,7 +162,10 @@ func main() {
 			}
 			flushedRecords, flushed := memtable.PutRecord(true, kljuc, "", blockManager, len(blockManager.GetSegments())-1)
 			if flushed {
-				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, compressionDictionary)
+				if hasCompression {
+					compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
+				}
+				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression)
 			}
 		} else if operacija == "VERIFY" {
 			fmt.Println("Unesite ime SSTable TOC fajla: ")
