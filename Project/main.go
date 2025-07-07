@@ -161,7 +161,7 @@ func main() {
 			scanner.Scan()
 			userInput := scanner.Text()
 
-			err := sstable.VerifySstableMerkle(userInput, blockManager, compressionDictionary)
+			err := sstable.VerifySstableMerkle(userInput, blockManager)
 			if err != nil {
 				fmt.Println(err)
 			}

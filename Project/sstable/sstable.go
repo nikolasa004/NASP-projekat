@@ -10,6 +10,7 @@ import (
 	"os"
 	"project/BlockManager"
 	"project/Memtable"
+	"sort"
 	"strings"
 )
 
@@ -719,7 +720,7 @@ func ReadTOCFile(filename string) (TOC, error) {
 
 	return toc, nil
 }
-func ReadSSTable(filename string, bm *BlockManager.BlockManager, dictionary *Dictionary) ([][]byte, error) {
+func ReadSSTable(filename string, bm *BlockManager.BlockManager) ([][]byte, error) {
 	metadata, err := ReadMetadata(filename)
 	if err != nil {
 		return nil, err
@@ -730,25 +731,20 @@ func ReadSSTable(filename string, bm *BlockManager.BlockManager, dictionary *Dic
 		return nil, err
 	}
 
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Key < records[j].Key
+	})
+
 	var allData [][]byte
 	for _, record := range records {
 		if !record.Tombstone {
-			// 2. Dobavi kompresovani ključ iz dictionary-ja
-			compressedKey, exist := dictionary.Get(record.Key) // ili Get(record.Key) ako imaš Get
-			if !exist {
-				fmt.Printf("Ključ [%s] nije pronađen u dictionary-ju!\n", record.Key)
-				continue // Preskoči ovaj record ako ključ nije pronađen
-			}
-			fmt.Printf("ULAZ u Merkle: KEY=[%s] (compressed [%s]) VAL=[%s]\n", record.Key, compressedKey, record.Value)
-			// 3. Kombinuj kompresovani ključ i vrednost
-			combined := append([]byte(compressedKey), record.Value...)
+			combined := append([]byte(record.Key), record.Value...)
 			allData = append(allData, combined)
 		}
 	}
 	return allData, nil
 }
-
-func ReadSSTableMultiMode(tocFile string, bm *BlockManager.BlockManager, dictionary *Dictionary) ([][]byte, error) {
+func ReadSSTableMultiMode(tocFile string, bm *BlockManager.BlockManager) ([][]byte, error) {
 	fmt.Println("Čitam SSTable multi file:", tocFile)
 	toc, err := ReadTOCFile(tocFile)
 	if err != nil {
@@ -769,17 +765,14 @@ func ReadSSTableMultiMode(tocFile string, bm *BlockManager.BlockManager, diction
 		return nil, err
 	}
 
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Key < records[j].Key
+	})
+
 	var allData [][]byte
 	for _, record := range records {
 		if !record.Tombstone {
-			// Dodaj dictionary obradu kao u prvoj funkciji:
-			compressedKey, exist := dictionary.Get(record.Key) // ili dictionary.Get(record.Key)
-			if !exist {
-				fmt.Printf("Ključ [%s] nije pronađen u dictionary-ju!\n", record.Key)
-				continue // Preskoči ovaj record ako ključ nije pronađen
-			}
-			fmt.Printf("ULAZ u Merkle: KEY=[%s] (compressed [%s]) VAL=[%s]\n", record.Key, compressedKey, record.Value)
-			combined := append([]byte(compressedKey), record.Value...)
+			combined := append([]byte(record.Key), record.Value...)
 			allData = append(allData, combined)
 		}
 	}

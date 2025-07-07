@@ -156,7 +156,7 @@ func IsSingleFile(filename string) bool {
 	return !strings.HasSuffix(filename, "-Data.bin")
 }
 
-func VerifySstableMerkle(tocInput string, blockManager *BlockManager.BlockManager, compresionDictionary *Dictionary) error {
+func VerifySstableMerkle(tocInput string, blockManager *BlockManager.BlockManager) error {
 	tocFilename, err := FindTOCPath(tocInput)
 	if err != nil {
 		return fmt.Errorf("nije pronađena SSTable: %v", err)
@@ -169,7 +169,7 @@ func VerifySstableMerkle(tocInput string, blockManager *BlockManager.BlockManage
 
 	if toc.SingleFile {
 		sstableFilename := toc.Files[0]
-		data, err := ReadSSTable(sstableFilename, blockManager, compresionDictionary)
+		data, err := ReadSSTable(sstableFilename, blockManager)
 		if err != nil {
 			return fmt.Errorf("greška prilikom čitanja SSTable (single): %v", err)
 		}
@@ -197,7 +197,7 @@ func VerifySstableMerkle(tocInput string, blockManager *BlockManager.BlockManage
 		CompareMerkleTrees(newMerkle, storedMerkle)
 	} else {
 		merkleFilename := toc.Files[len(toc.Files)-1]
-		data, err := ReadSSTableMultiMode(tocFilename, blockManager, compresionDictionary)
+		data, err := ReadSSTableMultiMode(tocFilename, blockManager)
 		if err != nil {
 			return fmt.Errorf("greška prilikom čitanja SSTable (multi): %v", err)
 		}
