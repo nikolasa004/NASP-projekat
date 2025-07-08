@@ -15,9 +15,9 @@ import (
 )
 
 type TOC struct {
-	SingleFile bool
+	SingleFile     bool
 	HasCompression bool
-	Files      []string
+	Files          []string
 }
 
 type Sstable struct {
@@ -57,33 +57,34 @@ func NewRecord(key string, value []byte, tombstone bool, timestamp uint64) DataR
 	return record
 }
 
-func GenerateSstableFilenames(baseDir string, tableID int) map[string]string {
+func GenerateSstableFilenames(baseDir string, tableID int, level int) map[string]string {
+	folder := fmt.Sprintf("%s/L%d/sstable-%04d", baseDir, level, tableID)
 	filenames := map[string]string{
-		"Data":    fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Data.bin", baseDir, tableID, tableID),
-		"Filter":  fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Filter.bin", baseDir, tableID, tableID),
-		"Index":   fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Index.bin", baseDir, tableID, tableID),
-		"Summary": fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Summary.bin", baseDir, tableID, tableID),
-		"TOC":     fmt.Sprintf("%s/sstable-%04d/sstable-%04d-TOC.txt", baseDir, tableID, tableID),
-		"Merkle":  fmt.Sprintf("%s/sstable-%04d/sstable-%04d-Merkle.bin", baseDir, tableID, tableID),
+		"Data":    fmt.Sprintf("%s/sstable-%04d-Data.bin", folder, tableID),
+		"Filter":  fmt.Sprintf("%s/sstable-%04d-Filter.bin", folder, tableID),
+		"Index":   fmt.Sprintf("%s/sstable-%04d-Index.bin", folder, tableID),
+		"Summary": fmt.Sprintf("%s/sstable-%04d-Summary.bin", folder, tableID),
+		"TOC":     fmt.Sprintf("%s/sstable-%04d-TOC.txt", folder, tableID),
+		"Merkle":  fmt.Sprintf("%s/sstable-%04d-Merkle.bin", folder, tableID),
 	}
 
 	return filenames
 }
 
-func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, compression bool) *Sstable {
+func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, compression bool, level int) *Sstable {
 
 	tableId, err := GetNextTableID()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	tableDir := fmt.Sprintf("data/sstable/sstable-%04d", tableId)
+	tableDir := fmt.Sprintf("data/sstable/L%d/sstable-%04d", level, tableId)
 	err = os.MkdirAll(tableDir, os.ModePerm)
 	if err != nil {
 		log.Fatalf("Failed to create directory for SSTable: %v", err)
 	}
 
-	filenames := GenerateSstableFilenames("data/sstable", tableId)
+	filenames := GenerateSstableFilenames("data/sstable", tableId, level)
 
 	sstable := &Sstable{
 		Filename:           filenames["TOC"],
@@ -95,7 +96,7 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	}
 
 	// Kreiranje fajlova
-	createFiles(tableId, false)
+	createFiles(tableId, false, level)
 
 	// TOC fajl
 	toc := TOC{
@@ -152,25 +153,25 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	}
 	log.Printf("Merkle stablo uspešno sačuvano u %s\n", sstable.MerkleTreeFilename)
 
-	UpdateMasterTOC(fmt.Sprintf("sstable-%04d", tableId))
+	UpdateMasterTOC(fmt.Sprintf("L%d/sstable-%04d", level, tableId))
 
 	return sstable
 }
 
-func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, compression bool) *Sstable {
+func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, blockManager *BlockManager.BlockManager, compression bool, level int) *Sstable {
 
 	tableId, err := GetNextTableID()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	tableDir := fmt.Sprintf("data/sstable/sstable-%04d", tableId)
+	tableDir := fmt.Sprintf("data/sstable/L%d/sstable-%04d", level, tableId)
 	err = os.MkdirAll(tableDir, os.ModePerm)
 	if err != nil {
 		log.Fatalf("Failed to create directory for SSTable: %v", err)
 	}
 
-	filename := fmt.Sprintf("data/sstable/sstable-%04d/sstable-%04d", tableId, tableId)
+	filename := fmt.Sprintf("data/sstable/L%d/sstable-%04d/sstable-%04d", level, tableId, tableId)
 
 	sstable := &Sstable{
 		Filename:           filename + ".bin",
@@ -182,11 +183,11 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 	}
 
 	// Kreiranje fajla
-	createFiles(tableId, true)
+	createFiles(tableId, true, level)
 
 	toc := TOC{
-		SingleFile: true,
-		Files:      []string{sstable.Filename},
+		SingleFile:     true,
+		Files:          []string{sstable.Filename},
 		HasCompression: compression,
 	}
 
@@ -279,7 +280,7 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 		log.Fatal(err)
 	}
 
-	UpdateMasterTOC(fmt.Sprintf("sstable-%04d", tableId))
+	UpdateMasterTOC(fmt.Sprintf("L%d/sstable-%04d", level, tableId))
 
 	return sstable
 }
@@ -375,7 +376,6 @@ func ReadMetadata(filename string) (Metadata, error) {
 		return metadata, err
 	}
 
-
 	// Čitaj polja redom kako su zapisana
 	err = binary.Read(file, binary.LittleEndian, &metadata.HasCompression)
 	if err != nil {
@@ -438,41 +438,40 @@ func ReadMetadata(filename string) (Metadata, error) {
 	return metadata, nil
 }
 
-func WriteSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, oneFile bool, blockManager *BlockManager.BlockManager, compression bool) *Sstable {
+func WriteSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool, oneFile bool, blockManager *BlockManager.BlockManager, compression bool, level int) *Sstable {
 	if oneFile {
-		return NewSstableOneFile(data, sampleRate, compaction, blockManager, compression)
+		return NewSstableOneFile(data, sampleRate, compaction, blockManager, compression, level)
 	}
-	return NewSstable(data, sampleRate, compaction, blockManager, compression)
+	return NewSstable(data, sampleRate, compaction, blockManager, compression, level)
 }
 
-func createFiles(tableID int, oneFile bool) (string, error) {
+func createFiles(tableID int, oneFile bool, level int) (string, error) {
 	// Kreiraj folder za novi SSTable
-	tableDir := fmt.Sprintf("data/sstable/sstable-%04d", tableID)
+	tableDir := fmt.Sprintf("data/sstable/L%d/sstable-%04d", level, tableID)
 
 	err := os.MkdirAll(tableDir, os.ModePerm) // Kreiraj folder ako ne postoji
 	if err != nil {
 		return "", fmt.Errorf("failed to create folder for SSTable: %v", err)
 	}
 
-	tableDir = "data/sstable/"
+	fileNames := GenerateSstableFilenames("data/sstable", tableID, level)
 
 	// Generiši fajlove unutar foldera
 	if !oneFile {
-		fileNames := GenerateSstableFilenames("", tableID)
 
 		fileNamesList := []string{fileNames["Data"], fileNames["Filter"], fileNames["Index"], fileNames["Summary"], fileNames["Merkle"], fileNames["TOC"]}
 
 		for _, name := range fileNamesList {
-			filePath := fmt.Sprintf("%s%s", tableDir, name)
-			file, err := os.Create(filePath)
+			file, err := os.Create(name)
 			if err != nil {
-				return "", fmt.Errorf("failed to create file %s: %v", filePath, err)
+				return "", fmt.Errorf("failed to create file %s: %v", name, err)
 			}
 			file.Close()
 		}
+
 	} else {
 		// Kreiraj jedan fajl ako je single file mod
-		filePath := fmt.Sprintf("%s/sstable-%04d/sstable-%04d.bin", tableDir, tableID, tableID)
+		filePath := fmt.Sprintf("data/sstable/L%d/sstable-%04d/sstable-%04d.bin", level, tableID, tableID)
 		file, err := os.Create(filePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to create single file: %v", err)
@@ -533,7 +532,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 		if !found {
 			return &BlockManager.WalRecord{}, false
 		}
-		
+
 		// Proveri da li je ključ u indexu
 		var index *Index
 		keyOffsetPairs := ReadIndexFromFile(&blockManager, filename, offset, metadata.IndexLength)
@@ -646,7 +645,8 @@ func FindInSstables(key string, blockManager BlockManager.BlockManager, dictiona
 	// Čitamo od najnovije ka starijim
 	for i := len(directories) - 1; i >= 0; i-- {
 		dir := directories[i]
-		tocfilename := "data/sstable/" + dir + "/" + dir + "-TOC.txt"
+		sstableName := strings.Split(dir, "/")[1]
+		tocfilename := "data/sstable/" + dir + "/" + sstableName + "-TOC.txt"
 
 		dataRecord, found := FindInSstable(key, tocfilename, blockManager, dictionary)
 		if found {
@@ -725,7 +725,7 @@ func ReadTOCFile(filename string) (TOC, error) {
 		return toc, err
 	}
 
-	toc.SingleFile = mode[0] == '1'
+	toc.SingleFile = mode[0] == '1' //da li je bane ovo dobro dodao,koja se vrednost upisuje u prvi red
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -814,4 +814,191 @@ func FindTOCPath(sstableName string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("nema SSTable sa tim imenom: %s", sstableName)
+}
+
+func ReadAllRecords(sst *Sstable, blockManager *BlockManager.BlockManager) ([]*Memtable.MemtableRecord, error) {
+	// 1. Otvori TOC
+	toc, err := ReadTOCFile(sst.Filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var records []*BlockManager.WalRecord
+	if toc.SingleFile {
+		// Single file mode
+		metadata, err := ReadMetadata(toc.Files[0])
+		if err != nil {
+			return nil, err
+		}
+		records, _, _, err = blockManager.ReadSstableRecordsFromBlocks(
+			toc.Files[0],
+			metadata.DataOffset,
+			blockManager.GetBlockSize(),
+			metadata.DataOffset+metadata.DataLength,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Multi file mode
+		dataFile := toc.Files[0]
+		info, err := os.Stat(dataFile)
+		if err != nil {
+			return nil, err
+		}
+		records, _, _, err = blockManager.ReadSstableRecordsFromBlocks(
+			dataFile,
+			0,
+			blockManager.GetBlockSize(),
+			uint64(info.Size()),
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// Konvertuj u []*Memtable.MemtableRecord
+	var memRecs []*Memtable.MemtableRecord
+	for _, rec := range records {
+		memRecs = append(memRecs, &Memtable.MemtableRecord{
+			Key:       rec.Key,
+			Value:     rec.Value,
+			Tombstone: rec.Tombstone,
+			Timestamp: rec.Timestamp,
+		})
+	}
+	return memRecs, nil
+}
+
+// CompactSstables pravi merge više SSTabela i vraća jedan slice rezultata (bez duplikata, najnoviji zapis pobeđuje)
+func CompactSstables(allSstables [][]*Memtable.MemtableRecord) []*Memtable.MemtableRecord {
+	N := len(allSstables)
+	positions := make([]int, N)
+	result := []*Memtable.MemtableRecord{}
+
+	for {
+		// Nađi najmanji ključ među aktivnim pokazivačima
+		minKey := ""
+		first := true
+		for i := range positions {
+			if positions[i] >= len(allSstables[i]) {
+				continue
+			}
+			key := allSstables[i][positions[i]].Key
+			if first || key < minKey {
+				minKey = key
+				first = false
+			}
+		}
+		if first {
+			break // Gotovi svi pokazivači
+		}
+
+		// Pronađi sve zapise sa tim ključem i upamti njihove timestampe
+		var newest *Memtable.MemtableRecord
+		var newestIdx int
+		var timestamps []uint64
+		for i := range positions {
+			if positions[i] >= len(allSstables[i]) {
+				continue
+			}
+			rec := allSstables[i][positions[i]]
+			if rec.Key == minKey {
+				timestamps = append(timestamps, rec.Timestamp)
+				if newest == nil || rec.Timestamp > newest.Timestamp {
+					newest = rec
+					newestIdx = i
+				}
+			}
+		}
+
+		// Prikazi sve timestampove i koji se upisuje
+		if len(timestamps) > 1 {
+			fmt.Printf("Ključ '%s' ima timestampe: %v, upisuje se iz SSTable #%d sa timestampom %d\n", minKey, timestamps, newestIdx, newest.Timestamp)
+		} else if len(timestamps) == 1 {
+			fmt.Printf("Ključ '%s' ima samo jedan timestamp: %d, upisuje se taj zapis\n", minKey, timestamps[0])
+		}
+
+		// Upisi i tombstone i netombstone zapise da bi se očuvala semantika brisanja
+		if newest != nil {
+			result = append(result, newest)
+		}
+
+		// Pomeraj pokazivače napred za sve koje su bile na tom ključu
+		for i := range positions {
+			if positions[i] < len(allSstables[i]) && allSstables[i][positions[i]].Key == minKey {
+				positions[i]++
+			}
+		}
+	}
+
+	return result
+}
+
+func CountSstablesInLevel(level int) (int, []string, error) {
+	path := fmt.Sprintf("data/sstable/L%d", level)
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return 0, nil, err
+	}
+	count := 0
+	var sstDirs []string
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "sstable-") {
+			count++
+			sstDirs = append(sstDirs, entry.Name())
+		}
+	}
+	return count, sstDirs, nil
+}
+
+// treba mi funkcija koja ce da ukloni sstable-xxxx iz master-toc.txt
+func RemoveSstablesFromMasterTOC(sstableNames []string) error {
+	masterTocPath := "data/sstable/master-toc.txt"
+	tmpPath := masterTocPath + ".tmp"
+
+	// Napravi mapu radi bržeg pretraživanja
+	toDelete := make(map[string]struct{})
+	for _, name := range sstableNames {
+		toDelete[name] = struct{}{}
+	}
+
+	in, err := os.Open(masterTocPath)
+	if err != nil {
+		return fmt.Errorf("failed to open master TOC file: %v", err)
+	}
+	defer in.Close()
+
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to create temp TOC file: %v", err)
+	}
+	defer out.Close()
+
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		skip := false
+		for sstableName := range toDelete {
+			if strings.Contains(line, sstableName) {
+				skip = true
+				break
+			}
+		}
+		if !skip && line != "" {
+			out.WriteString(line + "\n")
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading master TOC file: %v", err)
+	}
+
+	out.Sync()
+	out.Close()
+	in.Close()
+
+	if err := os.Rename(tmpPath, masterTocPath); err != nil {
+		return fmt.Errorf("failed to replace TOC file: %v", err)
+	}
+
+	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"project/Memtable"
 	"project/cache"
 	"project/config"
+	lsmtree "project/lsm_tree"
 	"project/sstable"
 	"strconv"
 )
@@ -30,14 +31,20 @@ func main() {
 	oneFile := config.SSTableManager.OneFile
 	hasCompression := config.SSTableManager.Compression
 
+	maxLevels := config.LSMTree.MaxLevels
+	filesPerLevel := config.LSMTree.MaxFilesPerLevel
+	tieredCompaction := config.LSMTree.TieredCompaction
+
 	cacheSize := config.Cache.CacheSize
+
+	lsmtree := lsmtree.NewLSMTree(maxLevels, filesPerLevel, tieredCompaction)
 
 	os.MkdirAll("sstable/dict", os.ModePerm)
 
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
 	var compressionDictionary *sstable.Dictionary
 	if hasCompression {
-		compressionDictionary := sstable.NewDictionary()
+		compressionDictionary = sstable.NewDictionary()
 		compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
 	}
 	cache := cache.NewLRUCache(cacheSize)
@@ -49,12 +56,21 @@ func main() {
 			if hasCompression {
 				compressionDictionary.StoreKeys(blockManager, recs)
 			}
-			sstable.WriteSstable(recs, summarySampleRate, false, oneFile, blockManager, hasCompression)
+			sstable.WriteSstable(recs, summarySampleRate, false, oneFile, blockManager, hasCompression, 0)
 		}
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	pomocnik := 8
+
+	if lsmtree.TieredCompaction {
+		// Ako je size-tiered, dodajemo SSTable u LSM stablo
+		lsmtree.AddSstable(0, summarySampleRate, oneFile, blockManager, hasCompression)
+	} else {
+		// Ako je leveled, dodajemo SSTable u LSM stablo
+		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression)
+	}
+
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
 		var operacija string
@@ -140,10 +156,10 @@ func main() {
 			fmt.Println("Flushed", flushed)
 			if flushed {
 				if hasCompression {
-					compressedRecords := compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
-					sstable.WriteSstable(compressedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression)
+					compressedRecords := compressionDictionary.StoreKeys(blockManager, flushedRecords)                          // čuvanje ključeva u rečniku
+					sstable.WriteSstable(compressedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0) // upisivanje u SSTable
 				} else {
-					sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression)
+					sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0)
 				}
 				//ovde sam ostavio da se keš ažurira sa flushed zapisima, a ne sa kompresovanim
 				cache.UpdateCache(flushedRecords) // ažuriranje keša sa flushed zapisima
@@ -163,7 +179,7 @@ func main() {
 				if hasCompression {
 					compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
 				}
-				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression)
+				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0) // upisivanje u SSTable
 			}
 		} else if operacija == "VERIFY" {
 			fmt.Println("Unesite ime SSTable TOC fajla: ")

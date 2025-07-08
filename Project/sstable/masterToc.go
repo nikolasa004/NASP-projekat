@@ -68,8 +68,9 @@ func GetNextTableID() (int, error) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		var id int
-		_, err := fmt.Sscanf(line, "sstable-%04d", &id)
+		var level, id int
+		//Pregledamo i single file i multi file sstabele
+		_, err := fmt.Sscanf(line, "L%d/sstable-%04d", &level, &id)
 		if err == nil && id > maxID {
 			maxID = id
 		}

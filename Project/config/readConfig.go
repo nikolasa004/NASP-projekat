@@ -25,11 +25,16 @@ type Config struct {
 	SSTableManager struct {
 		SummarySampleRate int  `json:"summarySampleRate"`
 		OneFile           bool `json:"oneFile"`
-		Compression        bool `json:"compresion"`
+		Compression       bool `json:"compression"`
 	} `json:"SSTableManager"`
 	Cache struct {
 		CacheSize int `json:"cacheSize"` // velicina blok keša
 	} `json:"Cache"`
+	LSMTree struct {
+		MaxLevels        int  `json:"maxLevels"`        // maksimalan broj nivoa u LSM stablu
+		MaxFilesPerLevel int  `json:"maxFilesPerLevel"` // maksimalan broj fajlova po nivou
+		TieredCompaction bool `json:"tieredCompaction"` // da li se koristi tiered compaction
+	} `json:"LSMTree"`
 }
 
 func ReadConfig() Config { //cita konfiguracioni fajl i vraca strukturu Config
@@ -113,6 +118,15 @@ func CheckValidConfig(config *Config) { //proverava da li su vrednosti u konfigu
 		config.SSTableManager.SummarySampleRate = 10
 	}
 
+	if config.LSMTree.MaxLevels <= 0 {
+		log.Print("Nevalidan broj nivoa za LSM stablo, postavljanje na podrazumevanu vrednost 4")
+		config.LSMTree.MaxLevels = 4
+	}
+	if config.LSMTree.MaxFilesPerLevel <= 0 {
+		log.Print("Nevalidan broj SSTabela po nivou, postavljanje na podrazumevanu vrednost 3")
+		config.LSMTree.MaxFilesPerLevel = 3
+	}
+
 }
 
 func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
@@ -138,16 +152,25 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 		SSTableManager: struct {
 			SummarySampleRate int  `json:"summarySampleRate"`
 			OneFile           bool `json:"oneFile"`
-			Compression        bool `json:"compresion"`
+			Compression       bool `json:"compression"`
 		}{
 			SummarySampleRate: 10,
 			OneFile:           true,
-			Compression:        false,
+			Compression:       false,
 		},
 		Cache: struct {
 			CacheSize int `json:"cacheSize"` // velicina blok keša
 		}{
 			CacheSize: 10,
+		},
+		LSMTree: struct {
+			MaxLevels        int  `json:"maxLevels"`        // maksimalan broj nivoa u LSM stablu
+			MaxFilesPerLevel int  `json:"maxFilesPerLevel"` // maksimalan broj fajlova po nivou
+			TieredCompaction bool `json:"tieredCompaction"` // da li se koristi tiered compaction
+		}{
+			MaxLevels:        4,
+			MaxFilesPerLevel: 3,
+			TieredCompaction: true,
 		},
 	}
 
