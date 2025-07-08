@@ -27,6 +27,11 @@ type Config struct {
 		OneFile           bool `json:"oneFile"`
 		Compresion        bool `json:"compresion"`
 	} `json:"SSTableManager"`
+
+	RateLimiter struct {
+		Capacity uint32 `json:"capacity"`
+		Interval int64  `json:"interval"`
+	} `json:"RateLimiter"`
 }
 
 func ReadConfig() Config { //cita konfiguracioni fajl i vraca strukturu Config
@@ -139,6 +144,14 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 			SummarySampleRate: 10,
 			OneFile:           true,
 			Compresion:        false,
+		},
+
+		RateLimiter: struct {
+			Capacity uint32 `json:"capacity"`
+			Interval int64  `json:"interval"`
+		}{
+			Capacity: 5,
+			Interval: 60,
 		},
 	}
 

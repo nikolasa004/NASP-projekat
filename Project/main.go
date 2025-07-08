@@ -6,6 +6,7 @@ import (
 	"os"
 	"project/BlockManager"
 	"project/Memtable"
+	"project/RateLimit"
 	"project/Types"
 	"project/config"
 	"project/sstable"
@@ -13,6 +14,51 @@ import (
 	"strings"
 	"time"
 )
+
+func ProveriIRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, blockManager *BlockManager.BlockManager, blockSize int, summarySampleRate int, oneFile bool) bool {
+	var state *RateLimit.RateLimitState
+	var err error
+
+	if record, found := memtable.GetRecord(tokenBucketKey); found {
+		state, err = RateLimit.DeserializeRateLimit([]byte(record.Value))
+		if err != nil {
+			fmt.Println("Greška pri čitanju token bucketa iz memtable-a:", err)
+			return false
+		}
+	} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager); found {
+		state, err = RateLimit.DeserializeRateLimit([]byte(SSrecord.Value))
+		if err != nil {
+			fmt.Println("Greška pri čitanju token bucketa iz SSTable-a:", err)
+			return false
+		}
+	} else {
+		fmt.Println("Nema token bucketa. Neispravna konfiguracija!")
+		return false
+	}
+
+	if !state.CanConsumeToken() {
+		fmt.Println("Prekoračenje tokena, pokušajte kasnije.")
+		return false
+	}
+
+	serialized, err := RateLimit.SerializeRateLimit(state)
+	if err != nil {
+		fmt.Println("Greška pri serijalizaciji token bucketa:", err)
+		return false
+	}
+
+	sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
+	for _, r := range sysRecords {
+		blockManager.PutRecord(r)
+	}
+
+	flushedSys, sysFlushed := memtable.PutRecord(false, tokenBucketKey, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+	if sysFlushed {
+		sstable.WriteSstable(flushedSys, summarySampleRate, false, oneFile, blockManager)
+	}
+
+	return true
+}
 
 func main() {
 	// bira se neka od metoda GET, PUT, DELETE
@@ -42,9 +88,67 @@ func main() {
 		}
 	}
 
+	const tokenBucketKey = "__rateLimit__"
+
+	rateLimitState := &RateLimit.RateLimitState{
+		StartTime: time.Now().Unix(),
+		Count:     config.RateLimiter.Capacity,
+		Capacity:  config.RateLimiter.Capacity,
+		Interval:  config.RateLimiter.Interval,
+	}
+
+	var (
+		existingSerialized []byte
+		existingFound      bool
+	)
+
+	if record, found := memtable.GetRecord(tokenBucketKey); found {
+		existingSerialized = []byte(record.Value)
+		existingFound = true
+	} else if record, found := sstable.FindInSstables(tokenBucketKey, *blockManager); found {
+		existingSerialized = []byte(record.Value)
+		existingFound = true
+	}
+
+	needToWrite := false
+
+	if existingFound {
+		existingState, err := RateLimit.DeserializeRateLimit(existingSerialized)
+		if err != nil {
+			fmt.Println("Greaka pri deserijalizaciji postojeceg token bucketa:", err)
+			needToWrite = true
+		} else {
+			if existingState.Capacity != config.RateLimiter.Capacity || existingState.Interval != config.RateLimiter.Interval {
+				fmt.Printf("Token bucket konfiguracija se promenila! Stara: cap=%d int=%d | Nova: cap=%d int=%d\n",
+					existingState.Capacity, existingState.Interval,
+					config.RateLimiter.Capacity, config.RateLimiter.Interval)
+				needToWrite = true
+			}
+		}
+	} else {
+		fmt.Println("Token bucket nije pronadjen. Kreira se novi")
+		needToWrite = true
+	}
+
+	if needToWrite {
+		serialized, err := RateLimit.SerializeRateLimit(rateLimitState)
+		if err != nil {
+			fmt.Println("Greska pri serijalizaciji token bucketa:", err)
+			os.Exit(1)
+		}
+		sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
+		for _, r := range sysRecords {
+			blockManager.PutRecord(r)
+		}
+		flushedSys, sysFlushed := memtable.PutRecord(false, tokenBucketKey, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+		if sysFlushed {
+			sstable.WriteSstable(flushedSys, summarySampleRate, false, oneFile, blockManager)
+		}
+	}
+
 	scanner := bufio.NewScanner(os.Stdin)
 	pomocnik := 8
-	//OuterLoop:
+
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
 		var operacija string
@@ -60,6 +164,11 @@ func main() {
 		// 	operacija = "/"
 		// }
 		if operacija == "GET" {
+
+			ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
+			if !ok {
+				continue
+			}
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
 			kljuc := scanner.Text()
@@ -71,6 +180,7 @@ func main() {
 				fmt.Println("Nema takvog kljuca")
 				continue
 			}
+
 			SSrecord, found := sstable.FindInSstables(kljuc, *blockManager)
 			if found {
 				fmt.Println(string(SSrecord.Value))
@@ -80,53 +190,9 @@ func main() {
 			fmt.Println("Nema takvog kljuca")
 		} else if operacija == "PUT" {
 
-			const tokenBucketKey = "__rateLimit__"
-			var state *Types.RateLimitState
-			var err error
-			if record, found := memtable.GetRecord(tokenBucketKey); found {
-				state, err = Types.DeserializeRateLimit([]byte(record.Value))
-				if err != nil {
-					fmt.Println("Greška pri čitanju token bucketa iz memtable-a:", err)
-					continue
-				}
-			} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager); found {
-				state, err = Types.DeserializeRateLimit([]byte(SSrecord.Value))
-				if err != nil {
-					fmt.Println("Greška pri čitanju token bucketa iz SSTable-a:", err)
-					continue
-				}
-			} else {
-				fmt.Println("Nema token bucketa. Unesite max broj tokena: ")
-				var cap uint32
-				fmt.Scanln(&cap)
-				fmt.Println("Unesite interval u sekundama: ")
-				var interval int64
-				fmt.Scanln(&interval)
-
-				state = &Types.RateLimitState{
-					StartTime: time.Now().Unix(),
-					Count:     cap,
-					Capacity:  cap,
-					Interval:  interval,
-				}
-
-			}
-			if !state.CanConsumeToken() {
-				fmt.Println("Prekoracenje tokena, pokusajte kasnije.")
+			ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
+			if !ok {
 				continue
-			}
-
-			serialized, err := Types.SerializeRateLimit(state)
-			// Upis u blockManager
-			sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
-			for _, r := range sysRecords {
-				blockManager.PutRecord(r)
-			}
-
-			// Upis u memtable
-			flushedSys, sysFlushed := memtable.PutRecord(false, tokenBucketKey, string(serialized), blockManager, len(blockManager.GetSegments())-1)
-			if sysFlushed {
-				sstable.WriteSstable(flushedSys, summarySampleRate, false, oneFile, blockManager)
 			}
 
 			fmt.Println("Unesite kljuc: ")
@@ -147,6 +213,10 @@ func main() {
 				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
 			}
 		} else if operacija == "DELETE" {
+			ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
+			if !ok {
+				continue
+			}
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
 			kljuc := scanner.Text()
@@ -178,31 +248,43 @@ func main() {
 						operacija := scanner.Text()
 
 						if operacija == "dodaj" {
+							ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
+							if !ok {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za CMS kojem će se dodati element ili ukucajte nazad da se vratite na odabir operacije: ")
-								var kljucCMS string
+								var keyCMS string
 								scanner.Scan()
-								kljucCMS = scanner.Text()
-								if kljucCMS == "nazad" {
+								keyCMS = scanner.Text()
+								if keyCMS == "nazad" {
 									continue cmsLoop
 								}
-								if !strings.HasPrefix(kljucCMS, "cms_") {
+								if !strings.HasPrefix(keyCMS, "cms_") {
 
 									fmt.Println("Ključ mora da počinje sa cms_!")
 									continue
 								}
-								record, found := memtable.GetRecord(kljucCMS)
+
+								var value []byte
+								found := false
+
+								if memRec, ok := memtable.GetRecord(keyCMS); ok {
+									value = memRec.Value
+									found = true
+								} else if ssRec, ok := sstable.FindInSstables(keyCMS, *blockManager); ok {
+									value = ssRec.Value
+									found = true
+								}
+
 								if found {
-									value := record.Value
 									cms, err := Types.Deserialize(value)
-									//fmt.Println("CMS.K =", cms.K, "CMS.M =", cms.M)
-									//fmt.Println("Prvi red:", cms.Matrix[0])
 									if err != nil {
-										fmt.Println("Greška pri deserializaciji: ", err)
+										fmt.Println("Greška pri deserializaciji:", err)
 									} else {
 										var noviElement string
 										for {
-											fmt.Println(("Unesite željeni element: "))
+											fmt.Println("Unesite željeni element: ")
 											scanner.Scan()
 											noviElement = scanner.Text()
 											if noviElement == "" {
@@ -214,7 +296,7 @@ func main() {
 										cms.Add([]byte(noviElement))
 										serialized, err := cms.Serialize()
 										if err != nil {
-											fmt.Println("Greška pri serializaciji: ", err)
+											fmt.Println("Greška pri serializaciji:", err)
 											return
 										}
 										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, cms.Key, serialized, blockSize, false)
@@ -224,51 +306,18 @@ func main() {
 										memtable.PutRecord(false, cms.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
 
 										fmt.Println("Element uspešno dodat")
-
 									}
-
 									continue cmsLoop
 								}
 
-								SSrecord, found := sstable.FindInSstables(kljucCMS, *blockManager)
-								if found {
-									value := SSrecord.Value
-									cms, err := Types.Deserialize(value)
-									if err != nil {
-										fmt.Println("Greška pri deserializaciji: ", err)
-									} else {
-										var newElement string
-										for {
-											fmt.Println("Unesite željeni element: ")
-											scanner.Scan()
-											newElement = scanner.Text()
-											if newElement == "" {
-												fmt.Println("Element ne može biti prazan string!")
-												continue
-											}
-											break
-										}
-										cms.Add([]byte(newElement))
-										serialized, err := cms.Serialize()
-										if err != nil {
-											fmt.Println("Greška pri serializaciji: ", err)
-											return
-										}
-										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, cms.Key, serialized, blockSize, false)
-										for _, record := range records {
-											blockManager.PutRecord(record)
-										}
-										memtable.PutRecord(false, cms.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
-										fmt.Println("Element uspešno dodat")
-
-									}
-									continue cmsLoop
-
-								}
-								fmt.Println("Nema takvog kljuca")
+								fmt.Println("Nema takvog ključa")
 							}
 
 						} else if operacija == "novi" {
+							ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
+							if !ok {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
 								var keyCMS string
@@ -343,6 +392,10 @@ func main() {
 							}
 
 						} else if operacija == "izbrisi" {
+							ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
+							if !ok {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
 								var keyCMS string
@@ -376,6 +429,10 @@ func main() {
 							}
 
 						} else if operacija == "prebroj" {
+							ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
+							if !ok {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
 								var keyCMS string
@@ -505,18 +562,25 @@ func main() {
 									fmt.Println("Ključ mora da počinje sa cms_!")
 									continue
 								}
-								record, found := memtable.GetRecord(kljucHLL)
+								var value []byte
+								found := false
+
+								if memRec, ok := memtable.GetRecord(kljucHLL); ok {
+									value = memRec.Value
+									found = true
+								} else if ssRec, ok := sstable.FindInSstables(kljucHLL, *blockManager); ok {
+									value = ssRec.Value
+									found = true
+								}
+
 								if found {
-									value := record.Value
 									hll, err := Types.DeserializeHLL(value)
-									//fmt.Println("CMS.K =", cms.K, "CMS.M =", cms.M)
-									//fmt.Println("Prvi red:", cms.Matrix[0])
 									if err != nil {
-										fmt.Println("Greška pri deserializaciji: ", err)
+										fmt.Println("Greška pri deserializaciji:", err)
 									} else {
 										var noviElement string
 										for {
-											fmt.Println(("Unesite željeni element: "))
+											fmt.Println("Unesite željeni element: ")
 											scanner.Scan()
 											noviElement = scanner.Text()
 											if noviElement == "" {
@@ -525,12 +589,15 @@ func main() {
 											}
 											break
 										}
+
 										hll.Add([]byte(noviElement))
+
 										serialized, err := hll.SerializeHLL()
 										if err != nil {
-											fmt.Println("Greška pri serializaciji: ", err)
+											fmt.Println("Greška pri serializaciji:", err)
 											return
 										}
+
 										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, hll.Key, serialized, blockSize, false)
 										for _, record := range records {
 											blockManager.PutRecord(record)
@@ -538,48 +605,11 @@ func main() {
 										memtable.PutRecord(false, hll.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
 
 										fmt.Println("Element uspešno dodat")
-
 									}
-
 									continue hllLoop
 								}
 
-								SSrecord, found := sstable.FindInSstables(kljucHLL, *blockManager)
-								if found {
-									value := SSrecord.Value
-									hll, err := Types.DeserializeHLL(value)
-									if err != nil {
-										fmt.Println("Greška pri deserializaciji: ", err)
-									} else {
-										var newElement string
-										for {
-											fmt.Println("Unesite željeni element: ")
-											scanner.Scan()
-											newElement = scanner.Text()
-											if newElement == "" {
-												fmt.Println("Element ne može biti prazan string!")
-												continue
-											}
-											break
-										}
-										hll.Add([]byte(newElement))
-										serialized, err := hll.SerializeHLL()
-										if err != nil {
-											fmt.Println("Greška pri serializaciji: ", err)
-											return
-										}
-										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, hll.Key, serialized, blockSize, false)
-										for _, record := range records {
-											blockManager.PutRecord(record)
-										}
-										memtable.PutRecord(false, hll.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
-										fmt.Println("Element uspešno dodat")
-
-									}
-									continue hllLoop
-
-								}
-								fmt.Println("Nema takvog kljuca")
+								fmt.Println("Nema takvog ključa")
 							}
 
 						} else if operacijaHLL == "kardinalitet" {
@@ -780,18 +810,25 @@ func main() {
 									fmt.Println("Ključ mora da počinje sa bf_!")
 									continue
 								}
-								record, found := memtable.GetRecord(kljucBF)
+								var value []byte
+								found := false
+
+								if memRec, ok := memtable.GetRecord(kljucBF); ok {
+									value = memRec.Value
+									found = true
+								} else if ssRec, ok := sstable.FindInSstables(kljucBF, *blockManager); ok {
+									value = ssRec.Value
+									found = true
+								}
+
 								if found {
-									value := record.Value
 									bf, err := Types.DeserializeBFWK(value)
-									//fmt.Println("CMS.K =", cms.K, "CMS.M =", cms.M)
-									//fmt.Println("Prvi red:", cms.Matrix[0])
 									if err != nil {
-										fmt.Println("Greška pri deserializaciji: ", err)
+										fmt.Println("Greška pri deserializaciji:", err)
 									} else {
 										var noviElement string
 										for {
-											fmt.Println(("Unesite željeni element: "))
+											fmt.Println("Unesite željeni element: ")
 											scanner.Scan()
 											noviElement = scanner.Text()
 											if noviElement == "" {
@@ -800,12 +837,15 @@ func main() {
 											}
 											break
 										}
+
 										bf.BF.Add(noviElement)
+
 										serialized, err := bf.SerializeBFWK()
 										if err != nil {
-											fmt.Println("Greška pri serializaciji: ", err)
+											fmt.Println("Greška pri serializaciji:", err)
 											return
 										}
+
 										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, bf.Key, serialized, blockSize, false)
 										for _, record := range records {
 											blockManager.PutRecord(record)
@@ -813,48 +853,11 @@ func main() {
 										memtable.PutRecord(false, bf.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
 
 										fmt.Println("Element uspešno dodat")
-
 									}
-
 									continue bfLoop
 								}
 
-								SSrecord, found := sstable.FindInSstables(kljucBF, *blockManager)
-								if found {
-									value := SSrecord.Value
-									bf, err := Types.DeserializeBFWK(value)
-									if err != nil {
-										fmt.Println("Greška pri deserializaciji: ", err)
-									} else {
-										var newElement string
-										for {
-											fmt.Println("Unesite željeni element: ")
-											scanner.Scan()
-											newElement = scanner.Text()
-											if newElement == "" {
-												fmt.Println("Element ne može biti prazan string!")
-												continue
-											}
-											break
-										}
-										bf.BF.Add(newElement)
-										serialized, err := bf.SerializeBFWK()
-										if err != nil {
-											fmt.Println("Greška pri serializaciji: ", err)
-											return
-										}
-										records := BlockManager.CreateBinaryRecordsWithFragmentation(false, bf.Key, serialized, blockSize, false)
-										for _, record := range records {
-											blockManager.PutRecord(record)
-										}
-										memtable.PutRecord(false, bf.Key, string(serialized), blockManager, len(blockManager.GetSegments())-1)
-										fmt.Println("Element uspešno dodat")
-
-									}
-									continue bfLoop
-
-								}
-								fmt.Println("Nema takvog kljuca")
+								fmt.Println("Nema takvog ključa")
 							}
 
 						} else if operacija == "novi" {

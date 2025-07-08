@@ -13,5 +13,9 @@
     "summarySampleRate": 2,
     "oneFile": true,
     "compresion": false
+  },
+  "RateLimiter": {
+    "capacity": 1,
+    "interval": 30
   }
 }
