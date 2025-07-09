@@ -12,7 +12,7 @@
   "SSTableManager": {
     "summarySampleRate": 2,
     "oneFile": true,
-    "compression": false
+    "compression": true
   },
   "Cache": {
     "cacheSize": 10

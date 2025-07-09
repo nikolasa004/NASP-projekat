@@ -36,6 +36,7 @@ func main() {
 
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
 	var compressionDictionary *sstable.Dictionary
+	fmt.Println(hasCompression)
 	if hasCompression {
 		compressionDictionary := sstable.NewDictionary()
 		compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla

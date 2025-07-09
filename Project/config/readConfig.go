@@ -25,7 +25,7 @@ type Config struct {
 	SSTableManager struct {
 		SummarySampleRate int  `json:"summarySampleRate"`
 		OneFile           bool `json:"oneFile"`
-		Compression        bool `json:"compresion"`
+		Compression        bool `json:"compression"`
 	} `json:"SSTableManager"`
 	Cache struct {
 		CacheSize int `json:"cacheSize"` // velicina blok keša
@@ -138,11 +138,11 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 		SSTableManager: struct {
 			SummarySampleRate int  `json:"summarySampleRate"`
 			OneFile           bool `json:"oneFile"`
-			Compression        bool `json:"compresion"`
+			Compression        bool `json:"compression"`
 		}{
 			SummarySampleRate: 10,
 			OneFile:           true,
-			Compression:        false,
+			Compression:        true,
 		},
 		Cache: struct {
 			CacheSize int `json:"cacheSize"` // velicina blok keša
