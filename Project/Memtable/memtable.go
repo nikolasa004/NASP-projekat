@@ -31,6 +31,10 @@ type Memtable struct {
 	activeTable   int // indeks aktivne tabele
 }
 
+func (table *Memtable) GetActiveTable() int {
+	return table.activeTable
+}
+
 func NewMemtable(implementType string, NumOfTables int, tableSize int) *Memtable {
 
 	memtable := &Memtable{

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"project/BlockManager"
+	"project/Iterator"
 	"project/Memtable"
 	"project/cache"
 	"project/config"
@@ -175,6 +176,47 @@ func main() {
 			if err != nil {
 				fmt.Println(err)
 			}
+		} else if operacija == "SCAN" {
+			fmt.Println("Unesite prefiks ili opseg kljuceva (npr. 'prefix' ili 'lowerBound,upperBound'): ")
+			scanner.Scan()
+			prefixOrRange := scanner.Text()
+
+			var iterators []Iterator.InterfaceIterator
+			
+			// Kombinovanje iteratora iz memtable i sstable
+			if containsComma(prefixOrRange) {
+				lowerUpper := splitByComma(prefixOrRange)
+				// Memtable iteratori
+				memIterators := Iterator.GenerateIteratorsRange(memtable, lowerUpper[0], lowerUpper[1])
+				// SSTable iteratori (trebate implementirati učitavanje SSTabela)
+				// sstableIterators := Iterator.GenerateSSTableIteratorsRange(sstables, lowerUpper[0], lowerUpper[1])
+				
+				iterators = append(iterators, memIterators...)
+				// iterators = append(iterators, sstableIterators...)
+			} else {
+				// Memtable iteratori
+				memIterators := Iterator.GenerateIteratorsPrefix(memtable, prefixOrRange)
+				// SSTable iteratori (trebate implementirati učitavanje SSTabela)
+				// sstableIterators := Iterator.GenerateSSTableIteratorsPrefix(sstables, prefixOrRange)
+				
+				iterators = append(iterators, memIterators...)
+				// iterators = append(iterators, sstableIterators...)
+			}
+
+			// Polimorfno korišćenje iteratora
+			numOfFinishedIterators := 0
+			for numOfFinishedIterators < len(iterators) {
+				for _, iterator := range iterators {
+					record := iterator.GetValue()
+					if record == nil {
+						numOfFinishedIterators++
+						continue
+					}
+					fmt.Printf("Key: %s, Value: %s\n", record.Key, string(record.Value))
+					iterator.Next() // prelazak na sledeci zapis
+				} 
+			}
+
 		} else if operacija == "/" {
 			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal
 			break
@@ -182,4 +224,45 @@ func main() {
 			fmt.Println("Nepostojeca operacija")
 		}
 	}
+}
+
+func containsComma(prefixOrRange string) bool {
+	return len(prefixOrRange) > 0 && (prefixOrRange[0] == ',' || prefixOrRange[len(prefixOrRange)-1] == ',' || contains(prefixOrRange, ","))
+}
+
+// contains checks if string s contains substring substr
+func contains(s, substr string) bool {
+	return len(substr) <= len(s) && indexOf(s, substr) >= 0
+}
+
+// indexOf returns the index of the first occurrence of substr in s, or -1 if not found
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
+// splitByComma splits the input string by a comma and returns a slice of strings.
+func splitByComma(s string) []string {
+	return Split(s, ",")
+}
+
+// Split is a helper function to split a string by a separator.
+func Split(s, sep string) []string {
+	var result []string
+	start := 0
+	for i := 0; i+len(sep) <= len(s); {
+		if s[i:i+len(sep)] == sep {
+			result = append(result, s[start:i])
+			i += len(sep)
+			start = i
+		} else {
+			i++
+		}
+	}
+	result = append(result, s[start:])
+	return result
 }

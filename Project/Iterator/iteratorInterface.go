@@ -16,7 +16,5 @@ func NewScanRecord(key string, value []byte, tombstone bool) *ScanRecord {
 
 type InterfaceIterator interface {
 	Next()
-	GetValue() ScanRecord
-	GenerateIteratorsPrefix(string) []InterfaceIterator
-	GenerateIteratorsRange(string, string) []InterfaceIterator
+	GetValue() *ScanRecord // Vraća trenutni rekord
 }
