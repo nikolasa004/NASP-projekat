@@ -25,23 +25,23 @@ type Table interface {
 
 type Memtable struct {
 	implementType string // SkipList, Hashmap ili B-stablo
-	numOfTables   int
+	NumOfTables   int
 	tableSize     int
 	tables        []Table
 	activeTable   int // indeks aktivne tabele
 }
 
-func NewMemtable(implementType string, numOfTables int, tableSize int) *Memtable {
+func NewMemtable(implementType string, NumOfTables int, tableSize int) *Memtable {
 
 	memtable := &Memtable{
 		implementType: implementType,
-		numOfTables:   numOfTables,
+		NumOfTables:   NumOfTables,
 		tableSize:     tableSize,
-		tables:        make([]Table, numOfTables),
+		tables:        make([]Table, NumOfTables),
 		activeTable:   0,
 	}
 
-	for i := 0; i < numOfTables; i++ {
+	for i := 0; i < NumOfTables; i++ {
 
 		switch implementType {
 		case "SkipList":
@@ -76,7 +76,7 @@ func (table *Memtable) Reconstruct(blockManager *BlockManager.BlockManager) ([][
 
 func (table *Memtable) GetRecord(kljuc string) (*MemtableRecord, bool) {
 	currTable := table.activeTable
-	for i := 0; i < table.numOfTables; i++ {
+	for i := 0; i < table.NumOfTables; i++ {
 		if table.tables[currTable].GetState() != "empty" {
 			record := table.tables[currTable].FindRecord(kljuc)
 
@@ -86,7 +86,7 @@ func (table *Memtable) GetRecord(kljuc string) (*MemtableRecord, bool) {
 				return record, false
 			}
 		}
-		currTable = (currTable - 1 + table.numOfTables) % table.numOfTables
+		currTable = (currTable - 1 + table.NumOfTables) % table.NumOfTables
 	}
 
 	return nil, false
@@ -113,7 +113,7 @@ func (table *Memtable) PutRecord(tombstone bool, key string, value string, block
 	if (*currTable).GetLength() >= table.tableSize { // trenutna tabela je napunjena
 		(*currTable).SetState("full")
 		(*currTable).SetLastBlockPosition(blockManager.GetCurrentBlock()) // cuvamo poslednji blok vezan za ovu tabelu
-		table.activeTable = (table.activeTable + 1) % table.numOfTables // rotiramo tabele
+		table.activeTable = (table.activeTable + 1) % table.NumOfTables // rotiramo tabele
 		fmt.Println("Prva korisna nakon flushovanja ove tabele:segment-",currSegment,",blok-", blockManager.GetCurrentBlock())
 
 		currTable = &table.tables[table.activeTable]
@@ -146,7 +146,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 	})
 
 	// azuriram segmente ostalih tabela
-	for i:= 0; i < t.numOfTables; i++ {
+	for i:= 0; i < t.NumOfTables; i++ {
 		t.tables[i].SetLinkedSegment(t.tables[i].GetLinkedSegment() - lowWatermark)
 	}
 	
@@ -166,8 +166,8 @@ func (table *Memtable) Iterator() <-chan Table {
 	ch := make(chan Table)
 
 	go func() {
-		for i := 0; i < table.numOfTables; i++ {
-			currTable := (table.activeTable + i) % table.numOfTables
+		for i := 0; i < table.NumOfTables; i++ {
+			currTable := (table.activeTable - i) % table.NumOfTables
 			ch <- table.tables[currTable]
 		}
 		close(ch)

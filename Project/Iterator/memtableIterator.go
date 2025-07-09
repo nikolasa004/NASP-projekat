@@ -7,7 +7,6 @@ import (
 type MemtableIterator struct {
 	MemtableIndex      int
 	currentRecordIndex int
-	memtableSize       int
 	isScanned          bool
 	memtable 		*Memtable.Memtable
 	isPrefixScan	  bool
@@ -17,15 +16,24 @@ type MemtableIterator struct {
 	upperBound string
 }
 
-func NewMemtableIterator(memtableIndex int) *MemtableIterator {
+func NewMemtableIterator(memtableIndex int,currentIndex int, memtable *Memtable.Memtable,
+						 isPrefixScan bool, prefix string,
+						 isRangeScan bool, lowerBound string, upperBound string) *MemtableIterator {
 	return &MemtableIterator{
 		MemtableIndex:      memtableIndex,
-		currentRecordIndex: 0,
+		currentRecordIndex: currentIndex,
+		isScanned:          false,
+		memtable:           memtable,
+		isPrefixScan:       isPrefixScan,
+		prefix:             prefix,
+		isRangeScan:        isRangeScan,
+		lowerBound:         lowerBound,
+		upperBound:         upperBound,
 	}
 }
 
 func (m *MemtableIterator) Next() {
-	if m.currentRecordIndex == m.memtableSize-1 {
+	if m.currentRecordIndex == m.memtable.NumOfTables -1 {
 		m.isScanned = true
 		return
 	}
@@ -57,4 +65,45 @@ func checkPrefixMatch(prefix string, key string) bool {
 		return true
 	}
 	return len(key) >= len(prefix) && key[:len(prefix)] == prefix
+}
+
+func GenerateIteratorsPrefix(memtable *Memtable.Memtable, prefix string) []*MemtableIterator {
+	var iterators []*MemtableIterator
+	tableIndex := 0
+	recordIndex := 0
+
+	for table := range memtable.Iterator() {
+		for record := range table.Iterator() {
+			if checkPrefixMatch(prefix, record.Key) {
+				iterators = append(iterators, NewMemtableIterator(tableIndex,recordIndex, memtable, true, prefix, false, "", ""))
+				break // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara prefiksu
+			}
+			recordIndex++
+		}
+		recordIndex = 0 // resetujemo indeks zapisa za sledecu tabelu
+		tableIndex++
+	}
+	return iterators
+}
+
+func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, upperBound string) []*MemtableIterator {
+	var iterators []*MemtableIterator
+	tableIndex := 0
+	recordIndex := 0
+
+	for table := range memtable.Iterator() {
+		for record := range table.Iterator() {
+			if record.Key >= lowerBound && record.Key <= upperBound {
+				iterators = append(iterators, NewMemtableIterator(tableIndex,recordIndex, memtable, false, "", true, lowerBound, upperBound))
+				break // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara opsegu
+			} else if record.Key > upperBound {
+				// Ako je trenutni ključ veći od gornje granice, nema potrebe da nastavljamo dalje u ovoj tabeli
+				break
+			}
+			recordIndex++
+		}
+		recordIndex = 0 // resetujemo indeks zapisa za sledecu tabelu
+		tableIndex++
+	}
+	return iterators
 }
