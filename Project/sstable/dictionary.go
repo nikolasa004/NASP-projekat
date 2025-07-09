@@ -91,9 +91,6 @@ func (d *Dictionary) Deserialize(blockManager *BlockManager.BlockManager) { // u
 			d.size = int(val) + 1
 		}
 	}
-	if len(data) > 0 {
-		d.size-- // smanjuje broj kljuceva za 1 jer je poslednji kljuc dodat kao poslednji
-	}
 	if d.size < 0 {
 		d.size = 0 // ako je broj kljuceva manji od 0, postavlja ga na 0
 	}
@@ -109,9 +106,9 @@ func (d *Dictionary) Deserialize(blockManager *BlockManager.BlockManager) { // u
 // 	}
 // }
 
-func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager ,records []*Memtable.MemtableRecord) []*Memtable.MemtableRecord {
+func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager, records []*Memtable.MemtableRecord) []*Memtable.MemtableRecord {
 	compressedRecords := make([]*Memtable.MemtableRecord, 0, len(records))
-	
+
 	// Kreiraj nove rekorde sa kompresovanim ključevima, ostavi originalne netaknute
 	for _, record := range records {
 		compressedRecord := &Memtable.MemtableRecord{
@@ -122,10 +119,21 @@ func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager ,records 
 		}
 		compressedRecords = append(compressedRecords, compressedRecord)
 	}
-	
+
 	err := blockManager.WriteDictionary(d.Serialize(), d.filename)
 	if err != nil {
 		log.Fatalf("Failed to write dictionary: %v", err)
 	}
 	return compressedRecords
+}
+
+// FindOriginalKey vraca originalni ključ za dati kompresovani ključ (koji je string broja).
+// Ako nije pronađen, vraca ulaz kao fallback.
+func (d *Dictionary) FindOriginalKey(compressed string) string {
+	for original, idx := range d.keysToVals {
+		if fmt.Sprintf("%d", idx) == compressed {
+			return original
+		}
+	}
+	return compressed
 }

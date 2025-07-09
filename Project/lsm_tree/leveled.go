@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 	"project/BlockManager"
+	"project/sstable"
 	"strings"
 )
 
-func (lsm *LSMTree) AddSstableLeveled(level int, summarySampleRate int, oneFile bool, blockManager *BlockManager.BlockManager, compression bool) {
+func (lsm *LSMTree) AddSstableLeveled(level int, summarySampleRate int, oneFile bool, blockManager *BlockManager.BlockManager, compression bool, dictionary *sstable.Dictionary) {
 	maxLevels := lsm.MaxLevels
 
 	// Početna granica (koliko fajlova na nivou 0 izaziva kompakciju)
@@ -37,7 +38,7 @@ func (lsm *LSMTree) AddSstableLeveled(level int, summarySampleRate int, oneFile 
 		// Ako broj SSTabela dostiže granicu, radi kompakciju i idi na sledeći nivo
 		if sstableCount >= maxFiles {
 			fmt.Printf("Radi kompakciju na nivou %d\n", currLevel)
-			lsm.CompactLevel(currLevel, summarySampleRate, oneFile, blockManager, compression)
+			lsm.CompactLevel(currLevel, summarySampleRate, oneFile, blockManager, compression, dictionary)
 			// Granica za sledeći nivo je puta 10
 			maxFiles *= 10
 		} else {

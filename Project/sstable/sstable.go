@@ -915,7 +915,7 @@ func CompactSstables(allSstables [][]*Memtable.MemtableRecord) []*Memtable.Memta
 		if len(timestamps) > 1 {
 			fmt.Printf("Ključ '%s' ima timestampe: %v, upisuje se iz SSTable #%d sa timestampom %d\n", minKey, timestamps, newestIdx, newest.Timestamp)
 		} else if len(timestamps) == 1 {
-			fmt.Printf("Ključ '%s' ima samo jedan timestamp: %d, upisuje se taj zapis\n", minKey, timestamps[0])
+
 		}
 
 		// Upisi i tombstone i netombstone zapise da bi se očuvala semantika brisanja

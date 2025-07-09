@@ -195,6 +195,10 @@ func VerifySstableMerkle(tocInput string, blockManager *BlockManager.BlockManage
 			return fmt.Errorf("greška prilikom parsiranja Merkle stabla: %v", err)
 		}
 		CompareMerkleTrees(newMerkle, storedMerkle)
+		fmt.Printf("Ocekivano merkle stablo %v", newMerkle)
+		PrintMerkleTree(newMerkle, 1)
+		fmt.Printf("Učitano merkle stablo %v", storedMerkle)
+		PrintMerkleTree(storedMerkle, 1)
 	} else {
 		merkleFilename := toc.Files[len(toc.Files)-1]
 		data, err := ReadSSTableMultiMode(tocFilename, blockManager)
@@ -207,6 +211,20 @@ func VerifySstableMerkle(tocInput string, blockManager *BlockManager.BlockManage
 			return fmt.Errorf("greška prilikom učitavanja Merkle stabla: %v", err)
 		}
 		CompareMerkleTrees(newMerkle, storedMerkle)
+		//fmt.Printf("Ocekivano merkle stablo %v", newMerkle)
+		//PrintMerkleTree(newMerkle, 1)
+		//fmt.Printf("Učitano merkle stablo %v", storedMerkle)
+		//PrintMerkleTree(storedMerkle, 1)
+
 	}
 	return nil
+}
+func PrintMerkleTree(node *MerkleNode, level int) {
+	if node == nil {
+		return
+	}
+	indent := strings.Repeat("  ", level)
+	fmt.Printf("%sLevel %d: %s\n", indent, level, node.Hash)
+	PrintMerkleTree(node.Left, level+1)
+	PrintMerkleTree(node.Right, level+1)
 }

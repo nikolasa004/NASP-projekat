@@ -26,7 +26,7 @@ func NewLSMTree(maxLevels int, filesPerLevel int, compactionType bool) *LSMTree 
 	}
 }
 
-func (lsm *LSMTree) AddSstable(level int, summarySampleRate int, oneFile bool, blockManager *BlockManager.BlockManager, compression bool) {
+func (lsm *LSMTree) AddSstable(level int, summarySampleRate int, oneFile bool, blockManager *BlockManager.BlockManager, compression bool, dictionary *sstable.Dictionary) {
 	maxLevels := lsm.MaxLevels
 
 	for currLevel := level; currLevel < maxLevels; currLevel++ {
@@ -54,7 +54,7 @@ func (lsm *LSMTree) AddSstable(level int, summarySampleRate int, oneFile bool, b
 		if sstableCount >= lsm.FilesPerLevel {
 			// Ovde pozivaš funkciju za kompakciju na tom nivou
 			fmt.Printf("Radi kompakciju na nivou %d\n", currLevel)
-			lsm.CompactLevel(currLevel, summarySampleRate, oneFile, blockManager, compression)
+			lsm.CompactLevel(currLevel, summarySampleRate, oneFile, blockManager, compression, dictionary)
 			// posle kompakcije, nastavi petlju na sledeći nivo
 		} else {
 			// Ako nema dovoljno za kompakciju, izlazimo iz petlje
@@ -64,7 +64,7 @@ func (lsm *LSMTree) AddSstable(level int, summarySampleRate int, oneFile bool, b
 }
 
 // Pretpostavimo: lsm.Levels[level] je lista SSTabela sa LEVELA na kojem radis kompakciju
-func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockManager *BlockManager.BlockManager, compression bool) {
+func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockManager *BlockManager.BlockManager, compression bool, dictionary *sstable.Dictionary) {
 	fmt.Printf("Kompaktujem nivo %d\n", level)
 
 	levelDir := fmt.Sprintf("data/sstable/L%d", level)
@@ -87,10 +87,34 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 				fmt.Printf("Greska ucitavanja %s: %v\n", tocPath, err)
 				continue
 			}
+			// Proveri da li je SSTabela kompresovana (prva linija u TOC-u)
+			tocFile, err := os.Open(tocPath)
+			isCompressed := false
+			if err == nil {
+
+				var firstLine string
+				fmt.Fscanf(tocFile, "%s\n", &firstLine)
+				if firstLine == "1" {
+					isCompressed = true
+				}
+				tocFile.Close()
+			}
+
+			for _, rec := range records {
+				fmt.Printf("Rečnik pre dekompresije: %#v\n", dictionary)
+				fmt.Printf("Da li je SSTabela kompresovana: %t\n", isCompressed)
+				// Ako je SSTabela kompresovana i postoji dictionary, dekompresuj ključ
+				if isCompressed && dictionary != nil {
+					rec.Key = dictionary.FindOriginalKey(rec.Key)
+					fmt.Printf("Dekomprimovan kljuc: %s\n", rec.Key)
+				}
+			}
+
 			allRecords = append(allRecords, records)
 			sstableFolders = append(sstableFolders, fmt.Sprintf("%s/%s", levelDir, entry.Name()))
 			sstableNamesForTOC = append(sstableNamesForTOC, fmt.Sprintf("L%d/%s", level, entry.Name()))
 		}
+
 	}
 
 	if len(allRecords) == 0 {
@@ -101,6 +125,7 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 	// Prvo obriši stare SSTable foldere
 	for _, folder := range sstableFolders {
 		err := os.RemoveAll(folder)
+		fmt.Printf("Brisem folder %s\n", folder)
 		if err != nil {
 			fmt.Printf("Greska pri brisanju foldera %s: %v\n", folder, err)
 		} else {
@@ -119,6 +144,17 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 	sort.Slice(mergedRecords, func(i, j int) bool {
 		return mergedRecords[i].Key < mergedRecords[j].Key
 	})
+	//for keyss, _ := range mergedRecords {
+	//	fmt.Printf("Procitan kljuc: %s\n", mergedRecords[keyss].Key)
+	//}
+
+	if compression && dictionary != nil {
+		for _, rec := range mergedRecords {
+			rec.Key = dictionary.Put(rec.Key)
+			//fmt.Printf("Kompresovan kljuc: %s\n", rec.Key)
+		}
+	}
+	fmt.Printf("Procitan kljuc: %s, vrednost: %s\n", mergedRecords[0].Key, mergedRecords[0].Value)
 
 	newSst := sstable.WriteSstable(mergedRecords, sampleRate, true, oneFile, blockManager, compression, level+1) //dodaj u sstable level
 	lsm.Levels[level+1] = append(lsm.Levels[level+1], newSst)
