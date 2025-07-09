@@ -160,3 +160,22 @@ func (table *Memtable) createRecord(tombstone bool, kljuc string, vrednost []byt
 	timeStamp := uint64(time.Now().Unix())
 	return NewMemtableRecord(kljuc, vrednost, timeStamp, tombstone)
 }
+
+
+func (table *Memtable) Iterator() <-chan Table {
+	ch := make(chan Table)
+
+	go func() {
+		for i := 0; i < table.numOfTables; i++ {
+			currTable := (table.activeTable + i) % table.numOfTables
+			ch <- table.tables[currTable]
+		}
+		close(ch)
+	}()
+
+	return ch
+}
+
+func (table *Memtable) GetTable(index int) Table {
+	return table.tables[index]
+}

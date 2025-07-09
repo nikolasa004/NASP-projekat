@@ -17,4 +17,5 @@ func NewScanRecord(key string, value []byte, tombstone bool) *ScanRecord {
 type InterfaceIterator interface {
 	Next()
 	GetValue() ScanRecord
+	GetIterators() []InterfaceIterator
 }
