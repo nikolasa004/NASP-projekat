@@ -106,7 +106,8 @@ func CompareMerkleTrees(expectedRoot, actualRoot *MerkleNode) {
 	invalid := ValidateMerkleTree(expectedRoot, actualRoot, &index)
 
 	if len(invalid) == 0 {
-		fmt.Println("Merkle stabla se razlikuju, ali nisu pronađeni konkretni neispravni blokovi.")
+		//fmt.Println("Merkle stabla se razlikuju, ali nisu pronađeni konkretni neispravni blokovi.")
+		fmt.Println("Merkle stabla su identična.")
 	} else {
 		fmt.Println("Merkle stabla se razlikuju. Neispravni blokovi:")
 		for _, idx := range invalid {
@@ -211,10 +212,10 @@ func VerifySstableMerkle(tocInput string, blockManager *BlockManager.BlockManage
 			return fmt.Errorf("greška prilikom učitavanja Merkle stabla: %v", err)
 		}
 		CompareMerkleTrees(newMerkle, storedMerkle)
-		//fmt.Printf("Ocekivano merkle stablo %v", newMerkle)
-		//PrintMerkleTree(newMerkle, 1)
-		//fmt.Printf("Učitano merkle stablo %v", storedMerkle)
-		//PrintMerkleTree(storedMerkle, 1)
+		fmt.Printf("Ocekivano merkle stablo %v", newMerkle)
+		PrintMerkleTree(newMerkle, 1)
+		fmt.Printf("Učitano merkle stablo %v", storedMerkle)
+		PrintMerkleTree(storedMerkle, 1)
 
 	}
 	return nil

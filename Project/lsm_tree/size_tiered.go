@@ -101,7 +101,6 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 			}
 
 			for _, rec := range records {
-				fmt.Printf("Rečnik pre dekompresije: %#v\n", dictionary)
 				fmt.Printf("Da li je SSTabela kompresovana: %t\n", isCompressed)
 				// Ako je SSTabela kompresovana i postoji dictionary, dekompresuj ključ
 				if isCompressed && dictionary != nil {
@@ -125,11 +124,9 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 	// Prvo obriši stare SSTable foldere
 	for _, folder := range sstableFolders {
 		err := os.RemoveAll(folder)
-		fmt.Printf("Brisem folder %s\n", folder)
+
 		if err != nil {
 			fmt.Printf("Greska pri brisanju foldera %s: %v\n", folder, err)
-		} else {
-			fmt.Printf("Obrisan folder %s\n", folder)
 		}
 	}
 
@@ -151,10 +148,10 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 	if compression && dictionary != nil {
 		for _, rec := range mergedRecords {
 			rec.Key = dictionary.Put(rec.Key)
-			//fmt.Printf("Kompresovan kljuc: %s\n", rec.Key)
+			fmt.Printf("Kompresovan kljuc: %s\n", rec.Key)
 		}
 	}
-	fmt.Printf("Procitan kljuc: %s, vrednost: %s\n", mergedRecords[0].Key, mergedRecords[0].Value)
+	//fmt.Printf("Procitan kljuc: %s, vrednost: %s\n", mergedRecords[0].Key, mergedRecords[0].Value)
 
 	newSst := sstable.WriteSstable(mergedRecords, sampleRate, true, oneFile, blockManager, compression, level+1) //dodaj u sstable level
 	lsm.Levels[level+1] = append(lsm.Levels[level+1], newSst)
