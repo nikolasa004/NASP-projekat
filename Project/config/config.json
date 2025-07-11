@@ -15,7 +15,7 @@
     "compresion": false
   },
   "RateLimiter": {
-    "capacity": 1,
+    "capacity": 10,
     "interval": 30
   }
 }

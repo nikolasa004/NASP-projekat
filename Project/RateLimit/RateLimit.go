@@ -3,6 +3,10 @@ package RateLimit
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"project/BlockManager"
+	"project/Memtable"
+	"project/sstable"
 	"time"
 )
 
@@ -56,19 +60,11 @@ func DeserializeRateLimit(data []byte) (*RateLimitState, error) {
 	return &state, err
 }
 
+// kad prodje interval vrati sve tokene u bucket, skini jedan token, ako ima
 func (r *RateLimitState) CanConsumeToken() bool {
 	now := time.Now().Unix()
 	elapsed := now - r.StartTime
 
-	//dodaje token ako je prosao interval
-	//	if elapsed >= r.Interval {
-	//		newTokens := uint32(elapsed / r.Interval)
-	//		r.Count += newTokens
-	//		if r.Count > r.Capacity {
-	//			r.Count = r.Capacity
-	//		}
-	//		r.StartTime = now
-	//	}
 	if elapsed >= r.Interval {
 		r.Count = r.Capacity
 		r.StartTime = now
@@ -77,5 +73,51 @@ func (r *RateLimitState) CanConsumeToken() bool {
 		return false
 	}
 	r.Count--
+	return true
+}
+
+// ide se kroz sistem i traži postojeći __ratelimit__ ključ, pojede token ako moze, vraća u sistem novi zapis sa jednim tokenom manje
+func ProveriIRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, blockManager *BlockManager.BlockManager, blockSize int, summarySampleRate int, oneFile bool) bool {
+	var state *RateLimitState
+	var err error
+
+	if record, found := memtable.GetRecord(tokenBucketKey); found {
+		state, err = DeserializeRateLimit([]byte(record.Value))
+		if err != nil {
+			fmt.Println("Greška pri čitanju token bucketa iz memtable-a:", err)
+			return false
+		}
+	} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager); found {
+		state, err = DeserializeRateLimit([]byte(SSrecord.Value))
+		if err != nil {
+			fmt.Println("Greška pri čitanju token bucketa iz SSTable-a:", err)
+			return false
+		}
+	} else {
+		fmt.Println("Nema token bucketa. Neispravna konfiguracija!")
+		return false
+	}
+
+	if !state.CanConsumeToken() {
+		fmt.Println("Prekoračenje tokena, pokušajte kasnije.")
+		return false
+	}
+
+	serialized, err := SerializeRateLimit(state)
+	if err != nil {
+		fmt.Println("Greška pri serijalizaciji token bucketa:", err)
+		return false
+	}
+
+	sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
+	for _, r := range sysRecords {
+		blockManager.PutRecord(r)
+	}
+
+	flushedSys, sysFlushed := memtable.PutRecord(false, tokenBucketKey, string(serialized), blockManager, len(blockManager.GetSegments())-1)
+	if sysFlushed {
+		sstable.WriteSstable(flushedSys, summarySampleRate, false, oneFile, blockManager)
+	}
+
 	return true
 }

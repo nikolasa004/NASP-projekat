@@ -15,53 +15,8 @@ import (
 	"time"
 )
 
-func ProveriIRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, blockManager *BlockManager.BlockManager, blockSize int, summarySampleRate int, oneFile bool) bool {
-	var state *RateLimit.RateLimitState
-	var err error
-
-	if record, found := memtable.GetRecord(tokenBucketKey); found {
-		state, err = RateLimit.DeserializeRateLimit([]byte(record.Value))
-		if err != nil {
-			fmt.Println("Greška pri čitanju token bucketa iz memtable-a:", err)
-			return false
-		}
-	} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager); found {
-		state, err = RateLimit.DeserializeRateLimit([]byte(SSrecord.Value))
-		if err != nil {
-			fmt.Println("Greška pri čitanju token bucketa iz SSTable-a:", err)
-			return false
-		}
-	} else {
-		fmt.Println("Nema token bucketa. Neispravna konfiguracija!")
-		return false
-	}
-
-	if !state.CanConsumeToken() {
-		fmt.Println("Prekoračenje tokena, pokušajte kasnije.")
-		return false
-	}
-
-	serialized, err := RateLimit.SerializeRateLimit(state)
-	if err != nil {
-		fmt.Println("Greška pri serijalizaciji token bucketa:", err)
-		return false
-	}
-
-	sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
-	for _, r := range sysRecords {
-		blockManager.PutRecord(r)
-	}
-
-	flushedSys, sysFlushed := memtable.PutRecord(false, tokenBucketKey, string(serialized), blockManager, len(blockManager.GetSegments())-1)
-	if sysFlushed {
-		sstable.WriteSstable(flushedSys, summarySampleRate, false, oneFile, blockManager)
-	}
-
-	return true
-}
-
 func main() {
-	// bira se neka od metoda GET, PUT, DELETE
+	// bira se neka od metoda GET, PUT, DELETE, TYPES
 	// od svake operacije se pravi zapis
 
 	config := config.ReadConfig()
@@ -147,26 +102,16 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
-	pomocnik := 8
 
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
 		var operacija string
 		scanner.Scan()
 		operacija = scanner.Text()
-		if pomocnik > 0 && operacija == "PUT" {
-			pomocnik--
-		}
-		// if pomocnik > 1 {
-		// 	operacija = "PUT" // za testiranje, moze se menjati na GET ili DELETE
-		// 	pomocnik--
-		// } else {
-		// 	operacija = "/"
-		// }
+
 		if operacija == "GET" {
 
-			ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
-			if !ok {
+			if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
 				continue
 			}
 			fmt.Println("Unesite kljuc: ")
@@ -190,8 +135,7 @@ func main() {
 			fmt.Println("Nema takvog kljuca")
 		} else if operacija == "PUT" {
 
-			ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
-			if !ok {
+			if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
 				continue
 			}
 
@@ -213,8 +157,7 @@ func main() {
 				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager)
 			}
 		} else if operacija == "DELETE" {
-			ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
-			if !ok {
+			if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
 				continue
 			}
 			fmt.Println("Unesite kljuc: ")
@@ -233,14 +176,14 @@ func main() {
 		} else if operacija == "/" {
 			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal
 			break
-		} else if operacija == "Types" {
+		} else if operacija == "TYPES" {
 			for {
-				fmt.Println("Sa čime želite da radite? Ukucajte cms za Count Min Sketch, hll za HyperLogLog, sh za SimHash, bl za BloomFilter ili nazad da izadjete iz biranja rada sa dostupnim strukturama: ")
+				fmt.Println("Sa čime želite da radite? Ukucajte CMS za Count Min Sketch, HLL - HyperLogLog, SH - SimHash, BF - BloomFilter ili NAZAD: ")
 				var operacijaTypes string
 				scanner.Scan()
 				operacijaTypes = scanner.Text()
 
-				if operacijaTypes == "cms" {
+				if operacijaTypes == "CMS" {
 				cmsLoop:
 					for {
 						fmt.Println("Unesite željenju operaciju: dodaj, izbrisi, prebroj, novi, nazad")
@@ -248,8 +191,7 @@ func main() {
 						operacija := scanner.Text()
 
 						if operacija == "dodaj" {
-							ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
-							if !ok {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
 								continue
 							}
 							for {
@@ -293,6 +235,7 @@ func main() {
 											}
 											break
 										}
+
 										cms.Add([]byte(noviElement))
 										serialized, err := cms.Serialize()
 										if err != nil {
@@ -314,8 +257,7 @@ func main() {
 							}
 
 						} else if operacija == "novi" {
-							ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
-							if !ok {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
 								continue
 							}
 							for {
@@ -392,8 +334,7 @@ func main() {
 							}
 
 						} else if operacija == "izbrisi" {
-							ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
-							if !ok {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
 								continue
 							}
 							for {
@@ -429,8 +370,7 @@ func main() {
 							}
 
 						} else if operacija == "prebroj" {
-							ok := ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile)
-							if !ok {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
 								continue
 							}
 							for {
@@ -466,12 +406,16 @@ func main() {
 									fmt.Println("Nema takvog kljuca.")
 									continue
 								}
-								fmt.Println("Unesite zeljeni element: ")
-								scanner.Scan()
-								element := scanner.Text()
-								if element == "" {
-									fmt.Println("Element ne moze biti prazan!")
-									continue
+								var element string
+								for {
+									fmt.Println("Unesite zeljeni element: ")
+									scanner.Scan()
+									element = scanner.Text()
+									if element == "" {
+										fmt.Println("Element ne moze biti prazan!")
+										continue
+									}
+									break
 								}
 								count := cms.Count([]byte(element))
 								fmt.Printf("Element '%s' se pojavljuje ~ %d puta (procena).\n", element, count)
@@ -485,7 +429,7 @@ func main() {
 						}
 					}
 
-				} else if operacijaTypes == "hll" {
+				} else if operacijaTypes == "HLL" {
 				hllLoop:
 					for {
 						fmt.Println("Unesite željenu operaciju za HLL: novi, dodaj, kardinalitet, izbrisi, nazad")
@@ -493,6 +437,9 @@ func main() {
 						operacijaHLL := scanner.Text()
 
 						if operacijaHLL == "novi" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za hll ili nazad za povratak: ")
 								var keyHLL string
@@ -517,14 +464,18 @@ func main() {
 									continue
 								}
 								var p uint8
+								var val int
 								fmt.Println("Unesite preciznost:")
-								//for {
-								scanner.Scan()
-								input := scanner.Text()
-								val, err := strconv.Atoi(input)
-								if err != nil || val < int(Types.HLL_MIN_PRECISION) || val > int(Types.HLL_MAX_PRECISION) {
-									fmt.Println("Preciznost mora biti izmedju 4  i 16")
-									continue
+								for {
+									scanner.Scan()
+									input := scanner.Text()
+									var err error
+									val, err = strconv.Atoi(input)
+									if err != nil || val < int(Types.HLL_MIN_PRECISION) || val > int(Types.HLL_MAX_PRECISION) {
+										fmt.Println("Preciznost mora biti izmedju 4  i 16")
+										continue
+									}
+									break
 								}
 								p = uint8(val)
 								hll := Types.NewHLL(p, keyHLL)
@@ -549,6 +500,9 @@ func main() {
 							}
 
 						} else if operacijaHLL == "dodaj" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za HLL kojem će se dodati element ili ukucajte nazad da se vratite na odabir operacije: ")
 								var kljucHLL string
@@ -613,6 +567,9 @@ func main() {
 							}
 
 						} else if operacijaHLL == "kardinalitet" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za hll ili nazad za povratak: ")
 								var keyHLL string
@@ -652,6 +609,9 @@ func main() {
 							}
 
 						} else if operacijaHLL == "izbrisi" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za hll ili nazad za povratak: ")
 								var keyHLL string
@@ -690,7 +650,10 @@ func main() {
 							fmt.Println("Nepostojeća operacija za HLL")
 						}
 					}
-				} else if operacijaTypes == "sh" {
+				} else if operacijaTypes == "SH" {
+					if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+						continue
+					}
 					for {
 						fmt.Println("Unesite dodaj za dodavanje novog fingerprinta, udaljenost za hemingovu udaljenst izmedju dva fingerprinta, ili nazad za povratak: ")
 						scanner.Scan()
@@ -722,7 +685,6 @@ func main() {
 							fmt.Println("Unesite tekst: ")
 							scanner.Scan()
 							text := scanner.Text()
-							fmt.Println("TEXT KOJI SE SALJE U ComputeFingerprint:", text)
 							fingerprint := Types.ComputeFingerprint(text)
 							fmt.Println("Fingerprint: ", fingerprint)
 
@@ -736,6 +698,9 @@ func main() {
 							}
 							fmt.Println("Fingerprint uspesno dodat.")
 						} else if input == "udaljenost" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							var keySH1, keySH2 string
 							var v1, v2 *Memtable.MemtableRecord
 							for {
@@ -789,7 +754,7 @@ func main() {
 							fmt.Println("nepostojeca operacija")
 						}
 					}
-				} else if operacijaTypes == "bl" {
+				} else if operacijaTypes == "BF" {
 				bfLoop:
 					for {
 						fmt.Println("Unesite željenju operaciju: dodaj, izbrisi, postoji, novi, nazad")
@@ -797,6 +762,9 @@ func main() {
 						operacija := scanner.Text()
 
 						if operacija == "dodaj" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za Bloom FIlter kojem će se dodati element ili ukucajte nazad da se vratite na odabir operacije: ")
 								var kljucBF string
@@ -861,6 +829,9 @@ func main() {
 							}
 
 						} else if operacija == "novi" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za bf ili nazad za povratak: ")
 								var keyBF string
@@ -937,6 +908,9 @@ func main() {
 							}
 
 						} else if operacija == "izbrisi" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za cms ili nazad za povratak: ")
 								var keyBF string
@@ -970,6 +944,9 @@ func main() {
 							}
 
 						} else if operacija == "postoji" {
+							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+								continue
+							}
 							for {
 								fmt.Println("Unesite ključ za bf ili nazad za povratak: ")
 								var keyBF string
@@ -1004,11 +981,15 @@ func main() {
 									continue
 								}
 								fmt.Println("Unesite zeljeni element: ")
-								scanner.Scan()
-								element := scanner.Text()
-								if element == "" {
-									fmt.Println("Element ne moze biti prazan!")
-									continue
+								var element string
+								for {
+									scanner.Scan()
+									element = scanner.Text()
+									if element == "" {
+										fmt.Println("Element ne moze biti prazan!")
+										continue
+									}
+									break
 								}
 								exists := bf.BF.Check(element)
 								if exists {

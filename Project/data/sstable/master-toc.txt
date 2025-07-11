@@ -62,3 +62,10 @@ sstable-0061
 sstable-0062
 sstable-0063
 sstable-0064
+sstable-0065
+sstable-0066
+sstable-0067
+sstable-0068
+sstable-0069
+sstable-0070
+sstable-0071

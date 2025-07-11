@@ -63,6 +63,7 @@ func (bfk *BloomFilterWithKey) SerializeBFWK() ([]byte, error) {
 func DeserializeBFWK(data []byte) (*BloomFilterWithKey, error) {
 	buf := bytes.NewReader(data)
 
+	//kljuc
 	var keyLen uint32
 	if err := binary.Read(buf, binary.LittleEndian, &keyLen); err != nil {
 		return nil, err
@@ -72,7 +73,7 @@ func DeserializeBFWK(data []byte) (*BloomFilterWithKey, error) {
 		return nil, err
 	}
 	key := string(keyBytes)
-
+	//m i k
 	var M, K uint64
 	if err := binary.Read(buf, binary.LittleEndian, &M); err != nil {
 		return nil, err
@@ -88,6 +89,7 @@ func DeserializeBFWK(data []byte) (*BloomFilterWithKey, error) {
 	if _, err := buf.Read(bitSet); err != nil {
 		return nil, err
 	}
+	//hesh funkcije (seed)
 	var hashCount uint32
 	if err := binary.Read(buf, binary.LittleEndian, &hashCount); err != nil {
 		return nil, err

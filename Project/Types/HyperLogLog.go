@@ -26,10 +26,6 @@ func firstKbits(value, k uint64) uint64 {
 	return value >> (64 - k)
 }
 
-//func trailingZeroBits(value uint64) int {
-//	return bits.TrailingZeros64(value)
-//}
-
 func (hll *HLL) Estimate() float64 {
 	sum := 0.0
 	for _, val := range hll.Reg {
