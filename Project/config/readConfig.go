@@ -161,7 +161,7 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 		}{
 			SummarySampleRate: 10,
 			OneFile:           true,
-			Compression:       false,
+			Compression:       true,
 		},
 		Cache: struct {
 			CacheSize int `json:"cacheSize"` // velicina blok keša
