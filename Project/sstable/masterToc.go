@@ -95,3 +95,30 @@ func ExtractMasterTOCPath(fullPath string) string {
 	// fallback: vrati ono što si dobio
 	return fullPath
 }
+
+func ReadMasterTOCIterators() (map[string][]string, error) {
+	file, err := os.Open("data/sstable/master-toc.txt")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	result := make(map[string][]string)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text() // npr. L0/sstable-0003
+		parts := strings.Split(line, "/")
+		if len(parts) != 2 {
+			continue // preskoči nevalidne linije
+		}
+		level := parts[0]
+		sstableName := parts[1]
+		result[level] = append(result[level], sstableName)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"project/BlockManager"
+	"strings"
 )
 
 type Summary struct {
@@ -167,6 +168,54 @@ func (s *Summary) Find(key string) (bool, uint64) {
 		}
 	}
 
+	return true, s.IndexOffsets[len(s.IndexOffsets)-1]
+}
+
+func (s *Summary) FindPrefix(prefix string) (bool, uint64) {
+	// Ako prefiks ne može biti u opsegu, odmah vrati
+	if prefix > s.Max {
+		return false, 0
+	}
+
+	// Pretraga ključeva koji počinju prefiksom
+	for i, key := range s.Keys {
+		if strings.HasPrefix(key, prefix) {
+			return true, s.IndexOffsets[i]
+		}
+		if key > prefix {
+			// Prvi veći ključ od prefiksa — možda je prvi koji potencijalno zadovoljava
+			if i > 0 {
+				return true, s.IndexOffsets[i-1]
+			}
+			return true, 0
+		}
+	}
+
+	return false, 0
+}
+
+func (s *Summary) FindRange(lower, upper string) (bool, uint64) {
+	// Ako ceo opseg dolazi pre Summary-ja
+	if upper < s.Min {
+		fmt.Println("Range is before Summary:", upper, "Summary Min:", s.Min)
+		return false, 0
+	}
+
+	// Ako ceo opseg dolazi posle Summary-ja
+	if lower > s.Max {
+		fmt.Println("Range is after Summary:", lower, "Summary Max:", s.Max)
+		return false, 0
+	}
+
+	// Iteracija: tražimo prvi ključ u Summary-ju koji je ≥ lower
+	for i, key := range s.Keys {
+		fmt.Println("Checking key:", key, "against lower:", lower)
+		if key >= lower {
+			return true, s.IndexOffsets[i]
+		}
+	}
+
+	// Ako nijedan nije veći ili jednak, ali još uvek postoji preklapanje
 	return true, s.IndexOffsets[len(s.IndexOffsets)-1]
 }
 

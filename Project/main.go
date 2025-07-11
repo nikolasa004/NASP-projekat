@@ -42,19 +42,12 @@ func main() {
 	os.MkdirAll("sstable/dict", os.ModePerm)
 
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
-<<<<<<< HEAD
-	var compressionDictionary = sstable.NewDictionary()
-	compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
-	fmt.Printf("Sadrzaj recnika: %v\n", compressionDictionary)
-
-=======
 	var compressionDictionary *sstable.Dictionary
 	fmt.Println(hasCompression)
 	if hasCompression {
 		compressionDictionary := sstable.NewDictionary()
 		compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
 	}
->>>>>>> origin/develop
 	cache := cache.NewLRUCache(cacheSize)
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
@@ -221,25 +214,25 @@ func main() {
 			prefixOrRange := scanner.Text()
 
 			var iterators []Iterator.InterfaceIterator
-			
+
 			// Kombinovanje iteratora iz memtable i sstable
 			if containsComma(prefixOrRange) {
 				lowerUpper := splitByComma(prefixOrRange)
 				// Memtable iteratori
 				memIterators := Iterator.GenerateIteratorsRange(memtable, lowerUpper[0], lowerUpper[1])
 				// SSTable iteratori (trebate implementirati učitavanje SSTabela)
-				// sstableIterators := Iterator.GenerateSSTableIteratorsRange(sstables, lowerUpper[0], lowerUpper[1])
-				
+				sstableIterators := Iterator.GenerateIteratorsRangeSstable(blockManager, lowerUpper[0], lowerUpper[1])
+
 				iterators = append(iterators, memIterators...)
-				// iterators = append(iterators, sstableIterators...)
+				iterators = append(iterators, sstableIterators...)
 			} else {
 				// Memtable iteratori
 				memIterators := Iterator.GenerateIteratorsPrefix(memtable, prefixOrRange)
 				// SSTable iteratori (trebate implementirati učitavanje SSTabela)
-				// sstableIterators := Iterator.GenerateSSTableIteratorsPrefix(sstables, prefixOrRange)
-				
+				sstableIterators := Iterator.GenerateIteratorsPrefixSstable(blockManager, prefixOrRange)
+
 				iterators = append(iterators, memIterators...)
-				// iterators = append(iterators, sstableIterators...)
+				iterators = append(iterators, sstableIterators...)
 			}
 
 			// Polimorfno korišćenje iteratora
@@ -253,7 +246,7 @@ func main() {
 					}
 					fmt.Printf("Key: %s, Value: %s\n", record.Key, string(record.Value))
 					iterator.Next() // prelazak na sledeci zapis
-				} 
+				}
 			}
 
 		} else if operacija == "/" {
