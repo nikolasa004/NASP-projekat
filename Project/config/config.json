@@ -11,7 +11,7 @@
   },
   "SSTableManager": {
     "summarySampleRate": 2,
-    "oneFile":true,
+    "oneFile":false,
     "compression": true
   },
   "Cache": {
@@ -19,8 +19,8 @@
   },
   "LSMTree": {
     "maxLevels": 5,
-    "maxFilesPerLevel": 2,
-    "tieredCompaction": false,
+    "maxFilesPerLevel": 3,
+    "tieredCompaction": true,
     "multiplyer": 3
 
   }

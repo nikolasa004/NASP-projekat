@@ -1,3 +1,0 @@
-1
-1
-data/sstable/L0/sstable-0006/sstable-0006.bin

@@ -1,2 +1,0 @@
-L0/sstable-0006
-L1/sstable-0007

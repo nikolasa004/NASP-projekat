@@ -141,7 +141,7 @@ func (lsm *LSMTree) CompactLevelLeveled(
 					tocFile.Close()
 				}
 				sstNext := &sstable.Sstable{Filename: tocNext}
-				minNext, maxNext, err := sstable.GetMinMaxKey(sstNext, blockManager, compression, dictionary)
+				minNext, maxNext, err := sstable.GetMinMaxKey(sstNext, blockManager, isCompressedNext, dictionary)
 				if err == nil && (minNext <= maxKey && maxNext >= minKey) {
 					records, err := sstable.ReadAllRecords(sstNext, blockManager)
 					if err == nil {
