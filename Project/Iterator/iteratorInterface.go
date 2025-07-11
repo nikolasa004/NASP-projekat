@@ -15,6 +15,8 @@ func NewScanRecord(key string, value []byte, tombstone bool) *ScanRecord {
 }
 
 type InterfaceIterator interface {
-	Next()
-	GetValue() *ScanRecord // Vraća trenutni rekord
+	Next()                     // Prelazi na sledeći zapis
+	GetValue() *ScanRecord     // Vraća trenutni rekord
+	ChangePage(targetPage int) // Prelazi na neku stranicu
+	FinishPage()               //Oznacava da je trenutna stranica zavrsena i prelazi na sledecu(postavlja oznaku u mapi)
 }

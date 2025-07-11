@@ -218,3 +218,11 @@ func (it *SstableIterator) GetValue() *ScanRecord {
 	}
 	return nil
 }
+
+func (it *SstableIterator) ChangePage(targetPage int) {
+
+}
+
+func (it *SstableIterator) FinishPage() {
+
+}

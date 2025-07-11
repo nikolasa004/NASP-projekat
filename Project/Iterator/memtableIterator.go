@@ -8,17 +8,18 @@ type MemtableIterator struct {
 	MemtableIndex      int
 	currentRecordIndex int
 	isScanned          bool
-	memtable 		*Memtable.Memtable
-	isPrefixScan	  bool
-	prefix string
-	isRangeScan	  bool
-	lowerBound string
-	upperBound string
+	memtable           *Memtable.Memtable
+	isPrefixScan       bool
+	prefix             string
+	isRangeScan        bool
+	lowerBound         string
+	upperBound         string
+	pagesMap           map[int]int
 }
 
-func NewMemtableIterator(memtableIndex int,currentIndex int, memtable *Memtable.Memtable,
-						 isPrefixScan bool, prefix string,
-						 isRangeScan bool, lowerBound string, upperBound string) *MemtableIterator {
+func NewMemtableIterator(memtableIndex int, currentIndex int, memtable *Memtable.Memtable,
+	isPrefixScan bool, prefix string,
+	isRangeScan bool, lowerBound string, upperBound string) *MemtableIterator {
 	return &MemtableIterator{
 		MemtableIndex:      memtableIndex,
 		currentRecordIndex: currentIndex,
@@ -29,15 +30,16 @@ func NewMemtableIterator(memtableIndex int,currentIndex int, memtable *Memtable.
 		isRangeScan:        isRangeScan,
 		lowerBound:         lowerBound,
 		upperBound:         upperBound,
+		pagesMap:           make(map[int]int),
 	}
 }
 
 func (m *MemtableIterator) Next() {
-	if m.currentRecordIndex == m.memtable.NumOfTables -1 {
+	if m.currentRecordIndex == m.memtable.NumOfTables-1 {
 		m.isScanned = true
 		return
 	}
-	
+
 	m.currentRecordIndex++
 }
 
@@ -49,9 +51,9 @@ func (m *MemtableIterator) GetValue() *ScanRecord {
 	//ovaj indeks m.MemtableIndex je samo udaljenost od aktivne tabele, tako da moramo da ga prilagodimo
 	table := m.memtable.GetTable(realIndex)
 	iterationCounter := 0
-	for record:= range table.Iterator() {
+	for record := range table.Iterator() {
 		if iterationCounter == m.currentRecordIndex {
-			if m.isPrefixScan && checkPrefixMatch(m.prefix,record.Key) {
+			if m.isPrefixScan && checkPrefixMatch(m.prefix, record.Key) {
 				return NewScanRecord(record.Key, record.Value, record.Tombstone)
 			} else if m.isRangeScan && record.Key >= m.lowerBound && record.Key <= m.upperBound {
 				return NewScanRecord(record.Key, record.Value, record.Tombstone)
@@ -61,6 +63,18 @@ func (m *MemtableIterator) GetValue() *ScanRecord {
 		iterationCounter++
 	}
 	return nil
+}
+
+func (m *MemtableIterator) ChangePage(targetPage int) {
+	if m.currentRecordIndex != m.pagesMap[targetPage] {
+		m.isScanned = false
+	}
+
+	m.currentRecordIndex = m.pagesMap[targetPage]
+}
+
+func (m *MemtableIterator) FinishPage() {
+	m.pagesMap[len(m.pagesMap)] = m.currentRecordIndex // čuvanje trenutnog indeksa kao početka sledeće stranice
 }
 
 func checkPrefixMatch(prefix string, key string) bool {
@@ -79,8 +93,9 @@ func GenerateIteratorsPrefix(memtable *Memtable.Memtable, prefix string) []Inter
 		for record := range table.Iterator() {
 			if checkPrefixMatch(prefix, record.Key) {
 				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable, true, prefix, false, "", "")
-				iterators = append(iterators, iterator)  // bez &, jer NewMemtableIterator već vraća *MemtableIterator
-				break // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara prefiksu
+				iterator.pagesMap[0] = recordIndex      // cuvanje indeksa prvog zapisa kao pocetka prve stranice
+				iterators = append(iterators, iterator) // bez &, jer NewMemtableIterator već vraća *MemtableIterator
+				break                                   // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara prefiksu
 			}
 			recordIndex++
 		}
@@ -99,8 +114,9 @@ func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, uppe
 		for record := range table.Iterator() {
 			if record.Key >= lowerBound && record.Key <= upperBound {
 				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable, false, "", true, lowerBound, upperBound)
-				iterators = append(iterators, iterator)  // bez &
-				break // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara opsegu
+				iterator.pagesMap[0] = recordIndex      // cuvanje indeksa prvog zapisa kao pocetka prve stranice
+				iterators = append(iterators, iterator) // bez &
+				break                                   // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara opsegu
 			} else if record.Key > upperBound {
 				// Ako je trenutni ključ veći od gornje granice, nema potrebe da nastavljamo dalje u ovoj tabeli
 				break
