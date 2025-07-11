@@ -42,12 +42,10 @@ func main() {
 	os.MkdirAll("sstable/dict", os.ModePerm)
 
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
-	var compressionDictionary *sstable.Dictionary
-	fmt.Println(hasCompression)
-	if hasCompression {
-		compressionDictionary := sstable.NewDictionary()
-		compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
-	}
+	var compressionDictionary = sstable.NewDictionary()
+	compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
+	fmt.Printf("Sadrzaj recnika: %v\n", compressionDictionary)
+
 	cache := cache.NewLRUCache(cacheSize)
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
