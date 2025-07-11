@@ -34,6 +34,7 @@ type Config struct {
 		MaxLevels        int  `json:"maxLevels"`        // maksimalan broj nivoa u LSM stablu
 		MaxFilesPerLevel int  `json:"maxFilesPerLevel"` // maksimalan broj fajlova po nivou
 		TieredCompaction bool `json:"tieredCompaction"` // da li se koristi tiered compaction
+		Multiplyer       int  `json:"multiplyer"`       // mnozitelj za broj SSTabela po nivou
 	} `json:"LSMTree"`
 }
 
@@ -126,6 +127,10 @@ func CheckValidConfig(config *Config) { //proverava da li su vrednosti u konfigu
 		log.Print("Nevalidan broj SSTabela po nivou, postavljanje na podrazumevanu vrednost 3")
 		config.LSMTree.MaxFilesPerLevel = 3
 	}
+	if config.LSMTree.Multiplyer <= 0 {
+		log.Print("Nevalidan mnozitelj za broj SSTabela po nivou, postavljanje na podrazumevanu vrednost 10")
+		config.LSMTree.Multiplyer = 10
+	}
 
 }
 
@@ -167,10 +172,12 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 			MaxLevels        int  `json:"maxLevels"`        // maksimalan broj nivoa u LSM stablu
 			MaxFilesPerLevel int  `json:"maxFilesPerLevel"` // maksimalan broj fajlova po nivou
 			TieredCompaction bool `json:"tieredCompaction"` // da li se koristi tiered compaction
+			Multiplyer       int  `json:"multiplyer"`       // mnozitelj za broj SSTabela po nivou
 		}{
 			MaxLevels:        4,
 			MaxFilesPerLevel: 3,
 			TieredCompaction: true,
+			Multiplyer:       10, // podrazumevani mnozitelj za broj SSTabela po nivou
 		},
 	}
 

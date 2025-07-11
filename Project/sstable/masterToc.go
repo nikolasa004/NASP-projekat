@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 // pravim master TOC fajl, u njemu se nalaze spisak svih postojeci sstabela
@@ -81,4 +82,16 @@ func GetNextTableID() (int, error) {
 	}
 
 	return maxID + 1, nil
+}
+func ExtractMasterTOCPath(fullPath string) string {
+	// fullPath: "data/sstable/L1/sstable-0001" ili "L1/sstable-0001/sstable-0001-TOC.txt"
+	// želiš da dobiješ "L1/sstable-0001"
+	parts := strings.Split(fullPath, "/")
+	for i, p := range parts {
+		if strings.HasPrefix(p, "L") && i+1 < len(parts) && strings.HasPrefix(parts[i+1], "sstable-") {
+			return p + "/" + parts[i+1]
+		}
+	}
+	// fallback: vrati ono što si dobio
+	return fullPath
 }

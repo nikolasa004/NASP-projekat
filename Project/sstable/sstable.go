@@ -495,7 +495,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 	if isCompressed {
 		compressedKey, found := dictionary.Get(key)
 		if !found {
-			log.Fatalf("Failed to get key from dictionary: %v", err)
+			return &BlockManager.WalRecord{}, false
 		}
 		key = compressedKey
 	}
@@ -642,25 +642,44 @@ func FindInSstables(key string, blockManager BlockManager.BlockManager, dictiona
 		directories = append(directories, strings.TrimSpace(scanner.Text()))
 	}
 
-	// Čitamo od najnovije ka starijim
-	for i := len(directories) - 1; i >= 0; i-- {
-		dir := directories[i]
-		sstableName := strings.Split(dir, "/")[1]
-		tocfilename := "data/sstable/" + dir + "/" + sstableName + "-TOC.txt"
-
-		dataRecord, found := FindInSstable(key, tocfilename, blockManager, dictionary)
-		if found {
-			if !dataRecord.Tombstone {
-				// Ako je pronađen i nije tombstone, odmah vraćamo
-				return *dataRecord, true
-			} else {
-				// Ako je tombstone, znamo da je obrisan — prekidamo
-				return BlockManager.WalRecord{}, false
+	maxLevel := 0
+	// Pronađi maksimalni nivo u master TOC-u
+	for _, dir := range directories {
+		if len(dir) > 2 && dir[0] == 'L' && dir[2] == '/' {
+			lvl := int(dir[1] - '0')
+			if lvl > maxLevel {
+				maxLevel = lvl
 			}
 		}
 	}
 
-	// Nije pronađen ni u jednom SSTable
+	for currentLevel := 0; currentLevel <= maxLevel; currentLevel++ {
+		levelPrefix := fmt.Sprintf("L%d/", currentLevel)
+		//fmt.Println("Tražim u nivou:", levelPrefix)
+		// Skupljamo sve iz trenutnog nivoa
+		var levelDirs []string
+		for _, dir := range directories {
+			if strings.HasPrefix(dir, levelPrefix) {
+				levelDirs = append(levelDirs, dir)
+			}
+		}
+		// Tražiš od najnovije ka starijoj (od kraja ka početku)
+		for i := len(levelDirs) - 1; i >= 0; i-- {
+			sstableName := strings.Split(levelDirs[i], "/")[1]
+			tocfilename := "data/sstable/" + levelDirs[i] + "/" + sstableName + "-TOC.txt"
+			//fmt.Println("Tražim u SSTable:", tocfilename)
+
+			dataRecord, found := FindInSstable(key, tocfilename, blockManager, dictionary)
+			if found {
+				if !dataRecord.Tombstone {
+					return *dataRecord, true
+				} else {
+					return BlockManager.WalRecord{}, false
+				}
+			}
+		}
+	}
+
 	return BlockManager.WalRecord{}, false
 }
 
@@ -1001,4 +1020,32 @@ func RemoveSstablesFromMasterTOC(sstableNames []string) error {
 	}
 
 	return nil
+}
+
+// Ne mogu koristiti summary jer tamo upisan min i max sa kompresovane kljuceve nije isti i za prave kljuceve
+
+func GetMinMaxKey(sst *Sstable, blockManager *BlockManager.BlockManager, isCompressed bool, dictionary *Dictionary) (string, string, error) {
+	// Prvo učitaj sve ključeve (možeš da optimizuješ da čitaš samo index ili summary!)
+	records, err := ReadAllRecords(sst, blockManager)
+	if err != nil {
+		return "", "", err
+	}
+	if len(records) == 0 {
+		return "", "", fmt.Errorf("nema zapisa u SSTabeli")
+	}
+
+	var keys []string
+	for _, rec := range records {
+		key := rec.Key
+		// Dekomprimuj ako treba
+		if isCompressed && dictionary != nil {
+			key = dictionary.FindOriginalKey(key)
+		}
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+	minKey := keys[0]
+	maxKey := keys[len(keys)-1]
+	return minKey, maxKey, nil
 }

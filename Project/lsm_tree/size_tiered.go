@@ -15,14 +15,16 @@ type LSMTree struct {
 	MaxLevels        int
 	FilesPerLevel    int  // size-tiered parametar
 	TieredCompaction bool // "size-tiered" ili "leveled"
+	Multiplyer       int  // mnozitelj za broj SSTabela po nivou
 }
 
-func NewLSMTree(maxLevels int, filesPerLevel int, compactionType bool) *LSMTree {
+func NewLSMTree(maxLevels int, filesPerLevel int, compactionType bool, multiplayer int) *LSMTree {
 	return &LSMTree{
 		Levels:           make([][]*sstable.Sstable, maxLevels),
 		MaxLevels:        maxLevels,
 		FilesPerLevel:    filesPerLevel,
 		TieredCompaction: compactionType, // ili "leveled", zavisno od konfiguracije
+		Multiplyer:       multiplayer,    // podrazumevani mnozitelj za broj SSTabela po nivou
 	}
 }
 

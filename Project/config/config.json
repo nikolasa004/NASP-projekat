@@ -11,15 +11,17 @@
   },
   "SSTableManager": {
     "summarySampleRate": 2,
-    "oneFile": true,
-    "compression": false
+    "oneFile":true,
+    "compression": true
   },
   "Cache": {
     "cacheSize": 10
   },
   "LSMTree": {
     "maxLevels": 5,
-    "maxFilesPerLevel": 3,
-    "tieredCompaction": true
+    "maxFilesPerLevel": 2,
+    "tieredCompaction": false,
+    "multiplyer": 3
+
   }
 }

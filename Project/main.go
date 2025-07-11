@@ -33,11 +33,11 @@ func main() {
 	maxLevels := config.LSMTree.MaxLevels
 	filesPerLevel := config.LSMTree.MaxFilesPerLevel
 	tieredCompaction := config.LSMTree.TieredCompaction
+	multiplyer := config.LSMTree.Multiplyer
 
 	cacheSize := config.Cache.CacheSize
 
-	lsmtree := lsmtree.NewLSMTree(maxLevels, filesPerLevel, tieredCompaction)
-
+	lsmtree := lsmtree.NewLSMTree(maxLevels, filesPerLevel, tieredCompaction, multiplyer)
 	os.MkdirAll("sstable/dict", os.ModePerm)
 
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
@@ -67,7 +67,7 @@ func main() {
 		lsmtree.AddSstable(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary)
 	} else {
 		// Ako je leveled, dodajemo SSTable u LSM stablo
-		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary)
+		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 	}
 
 	for {
@@ -173,7 +173,7 @@ func main() {
 					lsmtree.AddSstable(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary)
 				} else {
 					// Ako je leveled, dodajemo SSTable u LSM stablo
-					lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary)
+					lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 				}
 				//ovde sam ostavio da se keš ažurira sa flushed zapisima, a ne sa kompresovanim
 				cache.UpdateCache(flushedRecords) // ažuriranje keša sa flushed zapisima

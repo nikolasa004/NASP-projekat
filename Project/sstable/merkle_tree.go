@@ -29,7 +29,7 @@ func BuildTree(data [][]byte) *MerkleNode {
 	// Kreiranje listova
 	nodes := make([]*MerkleNode, 0, len(data))
 	for _, d := range data {
-		fmt.Println("Hashing data:", string(d))
+		//fmt.Println("Hashing data:", string(d))
 		h := hash(d)
 		node := &MerkleNode{Hash: h}
 		nodes = append(nodes, node)
@@ -106,8 +106,8 @@ func CompareMerkleTrees(expectedRoot, actualRoot *MerkleNode) {
 	invalid := ValidateMerkleTree(expectedRoot, actualRoot, &index)
 
 	if len(invalid) == 0 {
-		//fmt.Println("Merkle stabla se razlikuju, ali nisu pronađeni konkretni neispravni blokovi.")
-		fmt.Println("Merkle stabla su identična.")
+		fmt.Println("Merkle stabla se razlikuju, ali nisu pronađeni konkretni neispravni blokovi.")
+		//fmt.Println("Merkle stabla su identična.")
 	} else {
 		fmt.Println("Merkle stabla se razlikuju. Neispravni blokovi:")
 		for _, idx := range invalid {
