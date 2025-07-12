@@ -23,9 +23,10 @@ type SstableIterator struct {
 	isRangeScan  bool
 	lowerBound   string
 	upperBound   string
+	pagesMap     map[int]int
 }
 
-func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix string, lower string, upper string) *SstableIterator {
+func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix string, lower string, upper string, startingIndex int) *SstableIterator {
 	toc, err := sstable.ReadTOCFile(tocPath)
 	if err != nil {
 		fmt.Println("Greška pri čitanju TOC fajla:", err)
@@ -111,12 +112,20 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 		}
 	}
 
+	if startingIndex < 0 || startingIndex >= len(filtered) {
+		startingIndex = 0 // resetuj na početak ako je indeks van granica
+	}
+
+	// Kreiranje mape stranica
+	pages := make(map[int]int)
+	pages[0] = startingIndex // početak prve stranice
+
 	if isSingleFile {
 		return &SstableIterator{
 			blockManager:   bm,
 			filename:       dataPath,
 			keyOffsetPairs: filtered,
-			currentIndex:   0,
+			currentIndex:   startingIndex,
 			isScanned:      false,
 			dataOffset:     meta.DataOffset,
 			dataLength:     meta.DataLength,
@@ -125,13 +134,14 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 			isRangeScan:    lower != "",
 			lowerBound:     lower,
 			upperBound:     upper,
+			pagesMap:       pages,
 		}
 	} else {
 		return &SstableIterator{
 			blockManager:   bm,
 			filename:       dataPath,
 			keyOffsetPairs: filtered,
-			currentIndex:   0,
+			currentIndex:   startingIndex,
 			isScanned:      false,
 			dataOffset:     0,
 			dataLength:     uint64(dataLength),
@@ -140,18 +150,19 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 			isRangeScan:    lower != "",
 			lowerBound:     lower,
 			upperBound:     upper,
+			pagesMap:       pages,
 		}
 	}
 }
 
-func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string) []InterfaceIterator {
+func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string, startingIndex int) []InterfaceIterator {
 	var iterators []InterfaceIterator
 
 	levels, _ := sstable.ReadMasterTOCIterators()
 	for level, sstables := range levels {
 		for i := len(sstables) - 1; i >= 0; i-- {
 			toc := filepath.Join("data", "sstable", level, sstables[i], fmt.Sprintf("%s-TOC.txt", sstables[i]))
-			iter := NewSstableIterator(toc, bm, prefix, "", "")
+			iter := NewSstableIterator(toc, bm, prefix, "", "", startingIndex)
 			if iter == nil {
 				fmt.Println("Preskačem nevalidan SSTable:", toc)
 				continue
@@ -164,14 +175,14 @@ func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string
 	return iterators
 }
 
-func GenerateIteratorsRangeSstable(bm *BlockManager.BlockManager, lower, upper string) []InterfaceIterator {
+func GenerateIteratorsRangeSstable(bm *BlockManager.BlockManager, lower, upper string, startingIndex int) []InterfaceIterator {
 	var iterators []InterfaceIterator
 
 	levels, _ := sstable.ReadMasterTOCIterators()
 	for level, sstables := range levels {
 		for i := len(sstables) - 1; i >= 0; i-- {
 			toc := filepath.Join("data", "sstable", level, sstables[i], fmt.Sprintf("%s-TOC.txt", sstables[i]))
-			iter := NewSstableIterator(toc, bm, "", lower, upper)
+			iter := NewSstableIterator(toc, bm, "", lower, upper, startingIndex)
 			if iter == nil {
 				fmt.Println("Preskačem nevalidan SSTable:", toc)
 				continue
@@ -193,8 +204,8 @@ func (it *SstableIterator) Next() {
 
 func (it *SstableIterator) GetValue() *ScanRecord {
 	for !it.isScanned && it.currentIndex < len(it.keyOffsetPairs) {
-		fmt.Println("Proveravam indeks:", it.currentIndex, "od", it.keyOffsetPairs)
 		pair := it.keyOffsetPairs[it.currentIndex]
+		fmt.Println("index:", it.currentIndex, "key:", pair.Key, "offset:", pair.Offset+it.dataOffset)
 		record, found, _, _ := sstable.FindDataRecordBM(
 			pair.Key,
 			pair.Offset+it.dataOffset,
@@ -220,9 +231,14 @@ func (it *SstableIterator) GetValue() *ScanRecord {
 }
 
 func (it *SstableIterator) ChangePage(targetPage int) {
-
+	index, exists := it.pagesMap[targetPage]
+	if exists {
+		it.currentIndex = index
+		it.isScanned = false
+	}
 }
 
 func (it *SstableIterator) FinishPage() {
-
+	pageNumber := len(it.pagesMap)
+	it.pagesMap[pageNumber] = it.currentIndex
 }

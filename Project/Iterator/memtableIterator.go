@@ -84,10 +84,11 @@ func checkPrefixMatch(prefix string, key string) bool {
 	return len(key) >= len(prefix) && key[:len(prefix)] == prefix
 }
 
-func GenerateIteratorsPrefix(memtable *Memtable.Memtable, prefix string) []InterfaceIterator {
+func GenerateIteratorsPrefix(memtable *Memtable.Memtable, prefix string) ([]InterfaceIterator, int) {
 	var iterators []InterfaceIterator
 	tableIndex := 0
 	recordIndex := 0
+	maxRecordIndex := -1
 
 	for table := range memtable.Iterator() {
 		for record := range table.Iterator() {
@@ -95,20 +96,24 @@ func GenerateIteratorsPrefix(memtable *Memtable.Memtable, prefix string) []Inter
 				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable, true, prefix, false, "", "")
 				iterator.pagesMap[0] = recordIndex      // cuvanje indeksa prvog zapisa kao pocetka prve stranice
 				iterators = append(iterators, iterator) // bez &, jer NewMemtableIterator već vraća *MemtableIterator
-				break                                   // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara prefiksu
+				if recordIndex > maxRecordIndex {
+					maxRecordIndex = recordIndex // cuvamo maksimalni indeks zapisa koji odgovara prefiksu
+				}
+				break // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara prefiksu
 			}
 			recordIndex++
 		}
 		recordIndex = 0 // resetujemo indeks zapisa za sledecu tabelu
 		tableIndex++
 	}
-	return iterators
+	return iterators, maxRecordIndex
 }
 
-func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, upperBound string) []InterfaceIterator {
+func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, upperBound string) ([]InterfaceIterator, int) {
 	var iterators []InterfaceIterator
 	tableIndex := 0
 	recordIndex := 0
+	maxRecordIndex := -1
 
 	for table := range memtable.Iterator() {
 		for record := range table.Iterator() {
@@ -116,7 +121,10 @@ func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, uppe
 				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable, false, "", true, lowerBound, upperBound)
 				iterator.pagesMap[0] = recordIndex      // cuvanje indeksa prvog zapisa kao pocetka prve stranice
 				iterators = append(iterators, iterator) // bez &
-				break                                   // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara opsegu
+				if recordIndex > maxRecordIndex {
+					maxRecordIndex = recordIndex // cuvamo maksimalni indeks zapisa koji odgovara opsegu
+				}
+				break // izlazimo iz unutrasnje petlje jer smo nasli prvi record koji odgovara opsegu
 			} else if record.Key > upperBound {
 				// Ako je trenutni ključ veći od gornje granice, nema potrebe da nastavljamo dalje u ovoj tabeli
 				break
@@ -126,5 +134,5 @@ func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, uppe
 		recordIndex = 0 // resetujemo indeks zapisa za sledecu tabelu
 		tableIndex++
 	}
-	return iterators
+	return iterators, maxRecordIndex
 }

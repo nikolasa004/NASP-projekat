@@ -220,19 +220,21 @@ func main() {
 			// Kombinovanje iteratora iz memtable i sstable
 			var memIterators []Iterator.InterfaceIterator
 			var sstableIterators []Iterator.InterfaceIterator
+			var maxRecordIndex int
 			if strings.Contains(prefixOrRange, ",") {
 				lowerUpper := strings.Split(prefixOrRange, ",")
 
-				memIterators = Iterator.GenerateIteratorsRange(memtable, lowerUpper[0], lowerUpper[1])
-				sstableIterators = Iterator.GenerateIteratorsRangeSstable(blockManager, lowerUpper[0], lowerUpper[1])
+				memIterators, maxRecordIndex = Iterator.GenerateIteratorsRange(memtable, lowerUpper[0], lowerUpper[1])
+				sstableIterators = Iterator.GenerateIteratorsRangeSstable(blockManager, lowerUpper[0], lowerUpper[1], maxRecordIndex)
 			} else {
 
-				memIterators = Iterator.GenerateIteratorsPrefix(memtable, prefixOrRange)
-				sstableIterators = Iterator.GenerateIteratorsPrefixSstable(blockManager, prefixOrRange)
+				memIterators, maxRecordIndex = Iterator.GenerateIteratorsPrefix(memtable, prefixOrRange)
+				sstableIterators = Iterator.GenerateIteratorsPrefixSstable(blockManager, prefixOrRange, maxRecordIndex)
 
 			}
 			iterators = append(iterators, memIterators...)
 			iterators = append(iterators, sstableIterators...)
+
 
 			// Polimorfno korišćenje iteratora
 			numOfFinishedIterators := 0
