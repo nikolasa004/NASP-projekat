@@ -27,6 +27,7 @@ type Config struct {
 		OneFile           bool `json:"oneFile"`
 		Compression       bool `json:"compression"`
 	} `json:"SSTableManager"`
+
 	Cache struct {
 		CacheSize int `json:"cacheSize"` // velicina blok keša
 	} `json:"Cache"`
@@ -36,6 +37,11 @@ type Config struct {
 		TieredCompaction bool `json:"tieredCompaction"` // da li se koristi tiered compaction
 		Multiplyer       int  `json:"multiplyer"`       // mnozitelj za broj SSTabela po nivou
 	} `json:"LSMTree"`
+
+	RateLimiter struct {
+		Capacity uint32 `json:"capacity"`
+		Interval int64  `json:"interval"`
+	} `json:"RateLimiter"`
 }
 
 func ReadConfig() Config { //cita konfiguracioni fajl i vraca strukturu Config
@@ -178,6 +184,14 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 			MaxFilesPerLevel: 3,
 			TieredCompaction: true,
 			Multiplyer:       10, // podrazumevani mnozitelj za broj SSTabela po nivou
+		},
+
+		RateLimiter: struct {
+			Capacity uint32 `json:"capacity"`
+			Interval int64  `json:"interval"`
+		}{
+			Capacity: 5,
+			Interval: 60,
 		},
 	}
 

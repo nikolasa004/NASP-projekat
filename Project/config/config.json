@@ -22,6 +22,9 @@
     "maxFilesPerLevel": 3,
     "tieredCompaction": true,
     "multiplyer": 3
-
+  },
+  "RateLimiter": {
+    "capacity": 10,
+    "interval": 30
   }
 }
