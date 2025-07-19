@@ -64,7 +64,7 @@ func NewMemtable(implementType string, NumOfTables int, tableSize int) *Memtable
 
 func (table *Memtable) Reconstruct(blockManager *BlockManager.BlockManager) ([][]*MemtableRecord, bool) { // rekonstrukcija tabela zapisima iz Wal-a nakon pokretanja engine-a
 	reconstructRecs, recordSegments := blockManager.Reconstruct() // vraca rekonstruisane zapise i mapu koja mapira te zapise na njihove segmente
-	
+
 	// dodavanje rekonstruisanih zapisa
 	// moze da dodje do flush-a ako je promenjena konfiguracija
 	var allFlushedRecords [][]*MemtableRecord //skladisti sve flushovane zapise(ako bude vise flush-ova)
@@ -100,7 +100,7 @@ func (table *Memtable) PutRecord(tombstone bool, key string, value string, block
 	currTable := &table.tables[table.activeTable]
 	(*currTable).SetLinkedSegment(currSegment) // poslednji zapis u tabeli ce uvek biti skladisten u najnoviji segment
 
-	foundRecord,found := table.GetRecord(key)
+	foundRecord, found := table.GetRecord(key)
 	if found { // ako postoji zapis dolazi do azuriranja
 		newTimeStamp := uint64(time.Now().Unix())
 		foundRecord.SetTimestamp(newTimeStamp)
@@ -110,15 +110,15 @@ func (table *Memtable) PutRecord(tombstone bool, key string, value string, block
 		return nil, false
 	}
 
-	record := table.createRecord(tombstone , key, []byte(value)) // kreira se novi zapis
+	record := table.createRecord(tombstone, key, []byte(value)) // kreira se novi zapis
 	(*currTable).AddRecord(record)
 	fmt.Println("MEM - record added :", record.GetKey())
 
 	if (*currTable).GetLength() >= table.tableSize { // trenutna tabela je napunjena
 		(*currTable).SetState("full")
 		(*currTable).SetLastBlockPosition(blockManager.GetCurrentBlock()) // cuvamo poslednji blok vezan za ovu tabelu
-		table.activeTable = (table.activeTable + 1) % table.NumOfTables // rotiramo tabele
-		fmt.Println("Prva korisna nakon flushovanja ove tabele:segment-",currSegment,",blok-", blockManager.GetCurrentBlock())
+		table.activeTable = (table.activeTable + 1) % table.NumOfTables   // rotiramo tabele
+		fmt.Println("Prva korisna nakon flushovanja ove tabele:segment-", currSegment, ",blok-", blockManager.GetCurrentBlock())
 
 		currTable = &table.tables[table.activeTable]
 		if (*currTable).GetState() == "empty" { // ako je nova tabela prazna postaje aktivna
@@ -150,10 +150,10 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 	})
 
 	// azuriram segmente ostalih tabela
-	for i:= 0; i < t.NumOfTables; i++ {
+	for i := 0; i < t.NumOfTables; i++ {
 		t.tables[i].SetLinkedSegment(t.tables[i].GetLinkedSegment() - lowWatermark)
 	}
-	
+
 	blockManager.UpdateWalStart((*table).GetLastBlockPosition()) // postavljam prvi koristan blok za novi prvi segment
 
 	(*table).Clear() //praznim celu tabelu
@@ -165,13 +165,12 @@ func (table *Memtable) createRecord(tombstone bool, kljuc string, vrednost []byt
 	return NewMemtableRecord(kljuc, vrednost, timeStamp, tombstone)
 }
 
-
 func (table *Memtable) Iterator() <-chan Table {
 	ch := make(chan Table)
 
 	go func() {
 		for i := 0; i < table.NumOfTables; i++ {
-			currTable := (table.activeTable - i) % table.NumOfTables
+			currTable := (table.activeTable - i + table.NumOfTables) % table.NumOfTables
 			ch <- table.tables[currTable]
 		}
 		close(ch)

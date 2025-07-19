@@ -1,0 +1,7 @@
+0
+0
+data/sstable/L2/sstable-0002/sstable-0002-Data.bin
+data/sstable/L2/sstable-0002/sstable-0002-Index.bin
+data/sstable/L2/sstable-0002/sstable-0002-Summary.bin
+data/sstable/L2/sstable-0002/sstable-0002-Filter.bin
+data/sstable/L2/sstable-0002/sstable-0002-Merkle.bin

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"project/BlockManager"
-	"project/Iterator"
 	"project/Memtable"
 	"project/RateLimit"
+	"project/Scanners"
 	"project/Types"
 	"project/cache"
 	"project/config"
@@ -42,6 +42,7 @@ func main() {
 	multiplyer := config.LSMTree.Multiplyer
 
 	cacheSize := config.Cache.CacheSize
+	scannerCacheSize := config.ScannerCache.ScannerCacheSize
 
 	lsmtree := lsmtree.NewLSMTree(maxLevels, filesPerLevel, tieredCompaction, multiplyer)
 	os.MkdirAll("sstable/dict", os.ModePerm)
@@ -99,12 +100,12 @@ func main() {
 				fmt.Printf("Token bucket konfiguracija se promenila! Stara: cap=%d int=%d | Nova: cap=%d int=%d\n",
 					existingState.Capacity, existingState.Interval,
 					config.RateLimiter.Capacity, config.RateLimiter.Interval)
-				needToWrite = true
+				needToWrite = true //treba true
 			}
 		}
 	} else {
 		fmt.Println("Token bucket nije pronadjen. Kreira se novi")
-		needToWrite = true
+		needToWrite = true //treba true
 	}
 
 	if needToWrite {
@@ -142,7 +143,7 @@ func main() {
 
 		if operacija == "GET" {
 
-			if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+			if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 				continue
 			}
 			fmt.Println("Unesite kljuc: ")
@@ -174,7 +175,7 @@ func main() {
 
 		} else if operacija == "PUT" {
 
-			if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+			if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 				continue
 			}
 
@@ -244,7 +245,7 @@ func main() {
 				cache.UpdateCache(flushedRecords) // ažuriranje keša sa flushed zapisima
 			}
 		} else if operacija == "DELETE" {
-			if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+			if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 				continue
 			}
 			fmt.Println("Unesite kljuc: ")
@@ -274,47 +275,104 @@ func main() {
 				fmt.Println(err)
 			}
 		} else if operacija == "SCAN" {
-			fmt.Println("Unesite prefiks ili opseg kljuceva (npr. 'prefix' ili 'lowerBound,upperBound'): ")
-			scanner.Scan()
-			prefixOrRange := scanner.Text()
-
-			/////////////////////////////////////////////////////////////////////////////
-			//Odavde pa dole treba u Iterator paket da se prebaci
-			/////////////////////////////////////////////////////////////////////////////
-			var iterators []Iterator.InterfaceIterator
-
-			// Kombinovanje iteratora iz memtable i sstable
-			var memIterators []Iterator.InterfaceIterator
-			var sstableIterators []Iterator.InterfaceIterator
-			var maxRecordIndex int
-			if strings.Contains(prefixOrRange, ",") {
-				lowerUpper := strings.Split(prefixOrRange, ",")
-
-				memIterators, maxRecordIndex = Iterator.GenerateIteratorsRange(memtable, lowerUpper[0], lowerUpper[1])
-				sstableIterators = Iterator.GenerateIteratorsRangeSstable(blockManager, lowerUpper[0], lowerUpper[1], maxRecordIndex)
-			} else {
-
-				memIterators, maxRecordIndex = Iterator.GenerateIteratorsPrefix(memtable, prefixOrRange)
-				sstableIterators = Iterator.GenerateIteratorsPrefixSstable(blockManager, prefixOrRange, maxRecordIndex)
-
-			}
-			iterators = append(iterators, memIterators...)
-			iterators = append(iterators, sstableIterators...)
-
-			// Polimorfno korišćenje iteratora
-			numOfFinishedIterators := 0
-			for numOfFinishedIterators < len(iterators) {
-				for _, iterator := range iterators {
-					record := iterator.GetValue()
-					if record == nil {
-						numOfFinishedIterators++
-						continue
-					}
-					fmt.Printf("Key: %s, Value: %s\n", record.Key, string(record.Value))
-					iterator.Next() // prelazak na sledeci zapis
+			for {
+				reader := bufio.NewReader(os.Stdin)
+				fmt.Println("Odaberi tip skeniranja: ")
+				fmt.Println("1. Prefix 2. Range 3. Prefix sa iteratorom 4. Range sa iteratorom ili 5. nazad: ")
+				fmt.Println("Unesi za 1. prefix za 2. range za 3. iprefix  za 4. irange ili nazad za povratak: ")
+				choiceInput, _ := reader.ReadString('\n')
+				choice := strings.TrimSpace(choiceInput)
+				if choice == "nazad" {
+					break
 				}
-			}
+				var prefix, lowerBound, upperBound string
+				useIterator := false
+				pageSize := 0
+				switch choice {
+				case "prefix":
+					for {
+						fmt.Println("Unesite prefix: ")
+						input, _ := reader.ReadString('\n')
+						prefix = strings.TrimSpace(input)
+						if prefix != "" {
+							break
+						}
+						fmt.Println("Prefiks ne sme biti prazan.")
+					}
+				case "range":
+					for {
+						fmt.Println("Unesite donji limit: ")
+						input, _ := reader.ReadString('\n')
+						lowerBound = strings.TrimSpace(input)
+						if lowerBound != "" {
+							break
+						}
+						fmt.Println("Donji limit ne sme biti prazan.")
+					}
+					for {
+						fmt.Println("Unesite gornji limit: ")
+						input, _ := reader.ReadString('\n')
+						upperBound = strings.TrimSpace(input)
+						if upperBound != "" {
+							break
+						}
+						fmt.Println("Gornji limit ne sme biti prazan.")
+					}
+				case "iprefix":
+					for {
+						fmt.Println("Unesite prefix: ")
+						input, _ := reader.ReadString('\n')
+						prefix = strings.TrimSpace(input)
+						if prefix != "" {
+							break
+						}
+						fmt.Println("Prefiks ne sme biti prazan.")
+					}
+					useIterator = true
+					pageSize = 1
 
+				case "irange":
+					for {
+						fmt.Println("Unesite donji limit: ")
+						input, _ := reader.ReadString('\n')
+						lowerBound = strings.TrimSpace(input)
+						if lowerBound != "" {
+							break
+						}
+						fmt.Println("Donji limit ne sme biti prazan.")
+					}
+					for {
+						fmt.Println("Unesite gornji limit: ")
+						input, _ := reader.ReadString('\n')
+						upperBound = strings.TrimSpace(input)
+						if upperBound != "" {
+							break
+						}
+						fmt.Println("Gornji limit ne sme biti prazan.")
+					}
+					useIterator = true
+					pageSize = 1
+				default:
+					fmt.Println("Nevazeci izbor.")
+					continue
+				}
+
+				if !useIterator {
+					for {
+						fmt.Println("Unesite broj stranica: ")
+						input, _ := reader.ReadString('\n')
+						input = strings.TrimSpace(input)
+						num, err := strconv.Atoi(input)
+						if err == nil && num > 0 {
+							pageSize = num
+							break
+						}
+						fmt.Println("Unesite pozitivan ceo broj.")
+					}
+				}
+				Scanners.Scan(prefix, lowerBound, upperBound, memtable, blockManager, hasCompression, compressionDictionary, pageSize, scannerCacheSize)
+				break
+			}
 		} else if operacija == "/" {
 			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal
 			break
@@ -333,7 +391,7 @@ func main() {
 						operacija := scanner.Text()
 
 						if operacija == "dodaj" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -399,7 +457,7 @@ func main() {
 							}
 
 						} else if operacija == "novi" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -476,7 +534,7 @@ func main() {
 							}
 
 						} else if operacija == "izbrisi" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -512,7 +570,7 @@ func main() {
 							}
 
 						} else if operacija == "prebroj" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -579,7 +637,7 @@ func main() {
 						operacijaHLL := scanner.Text()
 
 						if operacijaHLL == "novi" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -642,7 +700,7 @@ func main() {
 							}
 
 						} else if operacijaHLL == "dodaj" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -709,7 +767,7 @@ func main() {
 							}
 
 						} else if operacijaHLL == "kardinalitet" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -751,7 +809,7 @@ func main() {
 							}
 
 						} else if operacijaHLL == "izbrisi" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -793,7 +851,7 @@ func main() {
 						}
 					}
 				} else if operacijaTypes == "SH" {
-					if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+					if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 						continue
 					}
 					for {
@@ -840,7 +898,7 @@ func main() {
 							}
 							fmt.Println("Fingerprint uspesno dodat.")
 						} else if input == "udaljenost" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							var keySH1, keySH2 string
@@ -904,7 +962,7 @@ func main() {
 						operacija := scanner.Text()
 
 						if operacija == "dodaj" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -971,7 +1029,7 @@ func main() {
 							}
 
 						} else if operacija == "novi" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -1050,7 +1108,7 @@ func main() {
 							}
 
 						} else if operacija == "izbrisi" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {
@@ -1086,7 +1144,7 @@ func main() {
 							}
 
 						} else if operacija == "postoji" {
-							if !RateLimit.ProveriIRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile) {
+							if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 								continue
 							}
 							for {

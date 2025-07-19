@@ -73,6 +73,11 @@ func (m *MemtableIterator) ChangePage(targetPage int) {
 	m.currentRecordIndex = m.pagesMap[targetPage]
 }
 
+func (m *MemtableIterator) AlreadyRead(targetPage int) bool {
+	_, exists := m.pagesMap[targetPage]
+	return exists
+}
+
 func (m *MemtableIterator) FinishPage() {
 	m.pagesMap[len(m.pagesMap)] = m.currentRecordIndex // čuvanje trenutnog indeksa kao početka sledeće stranice
 }

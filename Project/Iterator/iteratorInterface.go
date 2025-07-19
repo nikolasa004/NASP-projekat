@@ -15,8 +15,9 @@ func NewScanRecord(key string, value []byte, tombstone bool) *ScanRecord {
 }
 
 type InterfaceIterator interface {
-	Next()                     // Prelazi na sledeći zapis
-	GetValue() *ScanRecord     // Vraća trenutni rekord
-	ChangePage(targetPage int) // Prelazi na neku stranicu
-	FinishPage()               //Oznacava da je trenutna stranica zavrsena i prelazi na sledecu(postavlja oznaku u mapi)
+	Next()                           // Prelazi na sledeći zapis
+	GetValue() *ScanRecord           // Vraća trenutni rekord
+	ChangePage(targetPage int)       // Prelazi na neku stranicu
+	FinishPage()                     //Oznacava da je trenutna stranica zavrsena i prelazi na sledecu(postavlja oznaku u mapi)
+	AlreadyRead(targetPage int) bool //Proverava da li je strana ranije procitana
 }

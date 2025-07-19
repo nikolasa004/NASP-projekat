@@ -42,6 +42,10 @@ type Config struct {
 		Capacity uint32 `json:"capacity"`
 		Interval int64  `json:"interval"`
 	} `json:"RateLimiter"`
+
+	ScannerCache struct {
+		ScannerCacheSize int `json:"cacheSize"` // brroj strana koji se kesira
+	} `json:"ScannerCache"`
 }
 
 func ReadConfig() Config { //cita konfiguracioni fajl i vraca strukturu Config
@@ -137,7 +141,10 @@ func CheckValidConfig(config *Config) { //proverava da li su vrednosti u konfigu
 		log.Print("Nevalidan mnozitelj za broj SSTabela po nivou, postavljanje na podrazumevanu vrednost 10")
 		config.LSMTree.Multiplyer = 10
 	}
-
+	if config.ScannerCache.ScannerCacheSize <= 0 {
+		log.Print("Nevalidan broj stranica za kesiranje, postavljaju se podrazumevane vrednosti.")
+		config.ScannerCache.ScannerCacheSize = 5
+	}
 }
 
 func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
@@ -192,6 +199,11 @@ func GetDefaultConfig() Config { // vraca podrazumevane vrednosti konfiguracije
 		}{
 			Capacity: 5,
 			Interval: 60,
+		},
+		ScannerCache: struct {
+			ScannerCacheSize int `json:"cacheSize"` // velicina cache-a
+		}{
+			ScannerCacheSize: 5,
 		},
 	}
 

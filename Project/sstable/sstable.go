@@ -134,8 +134,10 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 
 	// Kreiranje indexa i upis index fajla
 	index := NewIndex(sstable.IndexFilename, keys, offsets)
+	//fmt.Println("Indeks summary kljucevi ", keys)
 	index.Sort()
 	summaryKeys, summaryOffsets, _ := index.WriteBM(true, 0, blockManager)
+	//fmt.Println(summaryKeys, "    ", summaryOffsets)
 
 	// Kreiranje summary fajla i upis summary fajla
 	summary := NewSummary(summaryKeys, summaryOffsets, sstable.SummaryFilename, sampleRate)
@@ -948,6 +950,7 @@ func CompactSstables(allSstables [][]*Memtable.MemtableRecord) []*Memtable.Memta
 				positions[i]++
 			}
 		}
+		//fmt.Println("min i max sstable", minKey, " ", maxKey)
 	}
 
 	return result

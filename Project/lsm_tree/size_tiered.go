@@ -151,6 +151,7 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 		for _, rec := range mergedRecords {
 			rec.Key = dictionary.Put(rec.Key)
 			fmt.Printf("Kompresovan kljuc: %s\n", rec.Key)
+
 		}
 	}
 	//fmt.Printf("Procitan kljuc: %s, vrednost: %s\n", mergedRecords[0].Key, mergedRecords[0].Value)

@@ -18,15 +18,17 @@ type SstableIterator struct {
 	dataOffset     uint64
 	dataLength     uint64
 
-	isPrefixScan bool
-	prefix       string
-	isRangeScan  bool
-	lowerBound   string
-	upperBound   string
-	pagesMap     map[int]int
+	globalCompressionDictionary *sstable.Dictionary
+	hasCompression              bool
+	isPrefixScan                bool
+	prefix                      string
+	isRangeScan                 bool
+	lowerBound                  string
+	upperBound                  string
+	pagesMap                    map[int]int
 }
 
-func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix string, lower string, upper string, startingIndex int) *SstableIterator {
+func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix string, lower string, upper string, startingIndex int, hasCompression bool, compressionDictionary *sstable.Dictionary) *SstableIterator {
 	toc, err := sstable.ReadTOCFile(tocPath)
 	if err != nil {
 		fmt.Println("Greška pri čitanju TOC fajla:", err)
@@ -94,20 +96,24 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 		indexStart = 0 // default
 	}
 
-	fmt.Println("Index start:", indexStart, indexLength)
 	if isSingleFile {
 		keyOffsetPairs = sstable.ReadIndexFromFile(bm, indexPath, indexStart, meta.IndexLength)
 	} else {
 		keyOffsetPairs = sstable.ReadIndexFromFile(bm, indexPath, indexStart, uint64(indexLength))
 	}
-	fmt.Println(meta.IndexLength)
 
 	filtered := make([]sstable.KeyOffsetPair, 0)
 	for _, pair := range keyOffsetPairs {
-		if prefix != "" && strings.HasPrefix(pair.Key, prefix) {
-			fmt.Println("ima prefix:", pair.Key, "->", prefix)
+		var realKey string
+		if hasCompression {
+			realKey = compressionDictionary.FindOriginalKey(pair.Key)
+		} else {
+			realKey = pair.Key
+		}
+
+		if prefix != "" && strings.HasPrefix(realKey, prefix) {
 			filtered = append(filtered, pair)
-		} else if lower != "" && upper != "" && pair.Key >= lower && pair.Key <= upper {
+		} else if lower != "" && upper != "" && realKey >= lower && realKey <= upper {
 			filtered = append(filtered, pair)
 		}
 	}
@@ -122,51 +128,56 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 
 	if isSingleFile {
 		return &SstableIterator{
-			blockManager:   bm,
-			filename:       dataPath,
-			keyOffsetPairs: filtered,
-			currentIndex:   startingIndex,
-			isScanned:      false,
-			dataOffset:     meta.DataOffset,
-			dataLength:     meta.DataLength,
-			isPrefixScan:   prefix != "",
-			prefix:         prefix,
-			isRangeScan:    lower != "",
-			lowerBound:     lower,
-			upperBound:     upper,
-			pagesMap:       pages,
+			blockManager:                bm,
+			filename:                    dataPath,
+			keyOffsetPairs:              filtered,
+			currentIndex:                startingIndex,
+			isScanned:                   false,
+			dataOffset:                  meta.DataOffset,
+			dataLength:                  meta.DataLength,
+			globalCompressionDictionary: compressionDictionary,
+			hasCompression:              hasCompression,
+			isPrefixScan:                prefix != "",
+			prefix:                      prefix,
+			isRangeScan:                 lower != "",
+			lowerBound:                  lower,
+			upperBound:                  upper,
+			pagesMap:                    pages,
 		}
 	} else {
 		return &SstableIterator{
-			blockManager:   bm,
-			filename:       dataPath,
-			keyOffsetPairs: filtered,
-			currentIndex:   startingIndex,
-			isScanned:      false,
-			dataOffset:     0,
-			dataLength:     uint64(dataLength),
-			isPrefixScan:   prefix != "",
-			prefix:         prefix,
-			isRangeScan:    lower != "",
-			lowerBound:     lower,
-			upperBound:     upper,
-			pagesMap:       pages,
+			blockManager:                bm,
+			filename:                    dataPath,
+			keyOffsetPairs:              filtered,
+			currentIndex:                startingIndex,
+			isScanned:                   false,
+			dataOffset:                  0,
+			dataLength:                  uint64(dataLength),
+			globalCompressionDictionary: compressionDictionary,
+			hasCompression:              hasCompression,
+			isPrefixScan:                prefix != "",
+			prefix:                      prefix,
+			isRangeScan:                 lower != "",
+			lowerBound:                  lower,
+			upperBound:                  upper,
+			pagesMap:                    pages,
 		}
 	}
 }
 
-func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string, startingIndex int) []InterfaceIterator {
+func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string, startingIndex int, hasCompression bool, compressionDictionary *sstable.Dictionary) []InterfaceIterator {
 	var iterators []InterfaceIterator
 
 	levels, _ := sstable.ReadMasterTOCIterators()
 	for level, sstables := range levels {
 		for i := len(sstables) - 1; i >= 0; i-- {
 			toc := filepath.Join("data", "sstable", level, sstables[i], fmt.Sprintf("%s-TOC.txt", sstables[i]))
-			iter := NewSstableIterator(toc, bm, prefix, "", "", startingIndex)
+			iter := NewSstableIterator(toc, bm, prefix, "", "", startingIndex, hasCompression, compressionDictionary)
 			if iter == nil {
 				fmt.Println("Preskačem nevalidan SSTable:", toc)
 				continue
 			}
+
 			if len(iter.keyOffsetPairs) > 0 {
 				iterators = append(iterators, iter)
 			}
@@ -175,14 +186,14 @@ func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string
 	return iterators
 }
 
-func GenerateIteratorsRangeSstable(bm *BlockManager.BlockManager, lower, upper string, startingIndex int) []InterfaceIterator {
+func GenerateIteratorsRangeSstable(bm *BlockManager.BlockManager, lower, upper string, startingIndex int, hasCompression bool, compressionDictionary *sstable.Dictionary) []InterfaceIterator {
 	var iterators []InterfaceIterator
 
 	levels, _ := sstable.ReadMasterTOCIterators()
 	for level, sstables := range levels {
 		for i := len(sstables) - 1; i >= 0; i-- {
 			toc := filepath.Join("data", "sstable", level, sstables[i], fmt.Sprintf("%s-TOC.txt", sstables[i]))
-			iter := NewSstableIterator(toc, bm, "", lower, upper, startingIndex)
+			iter := NewSstableIterator(toc, bm, "", lower, upper, startingIndex, hasCompression, compressionDictionary)
 			if iter == nil {
 				fmt.Println("Preskačem nevalidan SSTable:", toc)
 				continue
@@ -205,7 +216,7 @@ func (it *SstableIterator) Next() {
 func (it *SstableIterator) GetValue() *ScanRecord {
 	for !it.isScanned && it.currentIndex < len(it.keyOffsetPairs) {
 		pair := it.keyOffsetPairs[it.currentIndex]
-		fmt.Println("index:", it.currentIndex, "key:", pair.Key, "offset:", pair.Offset+it.dataOffset)
+
 		record, found, _, _ := sstable.FindDataRecordBM(
 			pair.Key,
 			pair.Offset+it.dataOffset,
@@ -213,18 +224,23 @@ func (it *SstableIterator) GetValue() *ScanRecord {
 			*it.blockManager,
 			it.dataOffset+it.dataLength,
 		)
+
 		if found {
-			if it.isPrefixScan && !strings.HasPrefix(record.Key, it.prefix) {
+			originalKey := record.Key
+			if it.hasCompression {
+				originalKey = it.globalCompressionDictionary.FindOriginalKey(record.Key)
+			}
+
+			if it.isPrefixScan && !strings.HasPrefix(originalKey, it.prefix) {
 				it.Next()
 				continue
 			}
-			if it.isRangeScan && (record.Key < it.lowerBound || record.Key > it.upperBound) {
+			if it.isRangeScan && (originalKey < it.lowerBound || originalKey > it.upperBound) {
 				it.Next()
 				continue
 			}
-			return NewScanRecord(record.Key, record.Value, record.Tombstone)
+			return NewScanRecord(originalKey, record.Value, record.Tombstone)
 		}
-		// Ako nije pronađeno (npr. tombstone/greška) — preskoči
 		it.Next()
 	}
 	return nil
@@ -241,4 +257,9 @@ func (it *SstableIterator) ChangePage(targetPage int) {
 func (it *SstableIterator) FinishPage() {
 	pageNumber := len(it.pagesMap)
 	it.pagesMap[pageNumber] = it.currentIndex
+}
+
+func (s *SstableIterator) AlreadyRead(targetPage int) bool {
+	_, exists := s.pagesMap[targetPage]
+	return exists
 }

@@ -77,7 +77,7 @@ func (r *RateLimitState) CanConsumeToken() bool {
 }
 
 // ide se kroz sistem i traži postojeći __ratelimit__ ključ, pojede token ako moze, vraća u sistem novi zapis sa jednim tokenom manje
-func ProveriIRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, blockManager *BlockManager.BlockManager, blockSize int, summarySampleRate int, oneFile bool) bool {
+func CheckRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, blockManager *BlockManager.BlockManager, blockSize int, summarySampleRate int, oneFile bool, hasCompression bool, compressionDictionary *sstable.Dictionary) bool {
 	var state *RateLimitState
 	var err error
 
@@ -87,7 +87,7 @@ func ProveriIRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, block
 			fmt.Println("Greška pri čitanju token bucketa iz memtable-a:", err)
 			return false
 		}
-	} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager); found {
+	} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager, compressionDictionary); found {
 		state, err = DeserializeRateLimit([]byte(SSrecord.Value))
 		if err != nil {
 			fmt.Println("Greška pri čitanju token bucketa iz SSTable-a:", err)
@@ -116,7 +116,7 @@ func ProveriIRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, block
 
 	flushedSys, sysFlushed := memtable.PutRecord(false, tokenBucketKey, string(serialized), blockManager, len(blockManager.GetSegments())-1)
 	if sysFlushed {
-		sstable.WriteSstable(flushedSys, summarySampleRate, false, oneFile, blockManager)
+		sstable.WriteSstable(flushedSys, summarySampleRate, false, oneFile, blockManager, hasCompression, 0)
 	}
 
 	return true
