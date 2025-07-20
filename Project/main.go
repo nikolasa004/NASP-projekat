@@ -125,7 +125,6 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
-	//pomocnik := 8
 
 	if lsmtree.TieredCompaction {
 		// Ako je size-tiered, dodajemo SSTable u LSM stablo
@@ -135,11 +134,18 @@ func main() {
 		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 	}
 
+	//pomocnik := 10
 	for {
 		fmt.Println("Unesite operaciju ili / za kraj: ")
 		var operacija string
 		scanner.Scan()
 		operacija = scanner.Text()
+		// if pomocnik > 0 {
+		// 	operacija = "PUT" // za testiranje, da ne moram da unosim svaki put
+		// 	pomocnik--
+		// } else {
+		// 	operacija = "/"
+		// }
 
 		if operacija == "GET" {
 
@@ -182,9 +188,11 @@ func main() {
 			fmt.Println("Unesite kljuc: ")
 			scanner.Scan()
 			kljuc := scanner.Text()
+			//kljuc := "key" + strconv.Itoa(pomocnik)
 			fmt.Println("Unesite vrednost: ")
 			scanner.Scan()
 			vrednost := scanner.Text()
+			//vrednost := "value" + strconv.Itoa(pomocnik)
 
 			/*
 				kljuc := "key" + strconv.Itoa(pomocnik)

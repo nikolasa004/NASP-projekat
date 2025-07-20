@@ -1,5 +1,2 @@
-L2/sstable-0001
-L2/sstable-0002
-L1/sstable-0003
-L0/sstable-0004
-L0/sstable-0005
+L1/sstable-0001
+L0/sstable-0002
