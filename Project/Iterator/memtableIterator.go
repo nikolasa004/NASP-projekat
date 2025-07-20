@@ -9,6 +9,7 @@ type MemtableIterator struct {
 	currentRecordIndex int
 	isScanned          bool
 	memtable           *Memtable.Memtable
+	sortedRecords      []*Memtable.MemtableRecord // u slucaju da se koristi verzija sa hashmap-om
 	isPrefixScan       bool
 	prefix             string
 	isRangeScan        bool
@@ -17,14 +18,15 @@ type MemtableIterator struct {
 	pagesMap           map[int]int
 }
 
-func NewMemtableIterator(memtableIndex int, currentIndex int, memtable *Memtable.Memtable,
+func NewMemtableIterator(memtableIndex int, currentIndex int, memtable *Memtable.Memtable,sortedRecords []*Memtable.MemtableRecord,
 	isPrefixScan bool, prefix string,
 	isRangeScan bool, lowerBound string, upperBound string) *MemtableIterator {
-	return &MemtableIterator{
+	iterator := &MemtableIterator{
 		MemtableIndex:      memtableIndex,
 		currentRecordIndex: currentIndex,
 		isScanned:          false,
 		memtable:           memtable,
+		sortedRecords:      sortedRecords,
 		isPrefixScan:       isPrefixScan,
 		prefix:             prefix,
 		isRangeScan:        isRangeScan,
@@ -32,6 +34,7 @@ func NewMemtableIterator(memtableIndex int, currentIndex int, memtable *Memtable
 		upperBound:         upperBound,
 		pagesMap:           make(map[int]int),
 	}
+	return iterator
 }
 
 func (m *MemtableIterator) Next() {
@@ -47,9 +50,24 @@ func (m *MemtableIterator) GetValue() *ScanRecord {
 	if m.isScanned {
 		return nil
 	}
+	if m.memtable.GetType() == Memtable.HashmapType {
+		record := m.sortedRecords[m.currentRecordIndex]
+		if record == nil {
+			return nil
+		} 
+
+		if m.isPrefixScan && checkPrefixMatch(m.prefix, record.Key) {
+			return NewScanRecord(record.Key, record.Value, record.Tombstone)
+		} else if m.isRangeScan && record.Key >= m.lowerBound && record.Key <= m.upperBound {
+			return NewScanRecord(record.Key, record.Value, record.Tombstone)
+		}
+		return nil
+	}
+
 	realIndex := (m.memtable.GetActiveTable() - m.MemtableIndex + m.memtable.NumOfTables) % m.memtable.NumOfTables
 	//ovaj indeks m.MemtableIndex je samo udaljenost od aktivne tabele, tako da moramo da ga prilagodimo
 	table := m.memtable.GetTable(realIndex)
+
 	iterationCounter := 0
 	for record := range table.Iterator() {
 		if iterationCounter == m.currentRecordIndex {
@@ -98,7 +116,11 @@ func GenerateIteratorsPrefix(memtable *Memtable.Memtable, prefix string) ([]Inte
 	for table := range memtable.Iterator() {
 		for record := range table.Iterator() {
 			if checkPrefixMatch(prefix, record.Key) {
-				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable, true, prefix, false, "", "")
+				var sortedRecords []*Memtable.MemtableRecord = nil
+				if memtable.GetType() == Memtable.HashmapType {
+					sortedRecords = table.GetSortedRecords()
+				}
+				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable,sortedRecords, true, prefix, false, "", "")
 				iterator.pagesMap[0] = recordIndex      // cuvanje indeksa prvog zapisa kao pocetka prve stranice
 				iterators = append(iterators, iterator) // bez &, jer NewMemtableIterator već vraća *MemtableIterator
 				if recordIndex > maxRecordIndex {
@@ -123,7 +145,11 @@ func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, uppe
 	for table := range memtable.Iterator() {
 		for record := range table.Iterator() {
 			if record.Key >= lowerBound && record.Key <= upperBound {
-				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable, false, "", true, lowerBound, upperBound)
+				var sortedRecords []*Memtable.MemtableRecord = nil
+				if memtable.GetType() == Memtable.HashmapType {
+					sortedRecords = table.GetSortedRecords()
+				}
+				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable,sortedRecords, false, "", true, lowerBound, upperBound)
 				iterator.pagesMap[0] = recordIndex      // cuvanje indeksa prvog zapisa kao pocetka prve stranice
 				iterators = append(iterators, iterator) // bez &
 				if recordIndex > maxRecordIndex {

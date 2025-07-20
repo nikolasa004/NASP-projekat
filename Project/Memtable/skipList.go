@@ -142,3 +142,14 @@ func (skipList *SkipList) Iterator() <-chan *MemtableRecord {
 	}()
 	return ch
 }
+
+func (s *SkipList) GetSortedRecords() []*MemtableRecord { // vrednosti u tabeli sortirane po kljucu
+	if s.size == 0 {
+		return nil
+	}
+	records := make([]*MemtableRecord, 0, s.size)
+	for record := range s.Iterator() {
+		records = append(records, record)
+	}
+	return records
+}

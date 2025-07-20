@@ -62,6 +62,14 @@ func (m *Hashmap) AddRecord(record *MemtableRecord) {
 	m.size++
 }
 
+func (m *Hashmap) GetSortedRecords() []*MemtableRecord {
+	values := make([]*MemtableRecord, 0, len(m.records))
+	for v := range m.Iterator() {
+		values = append(values, v)
+	}
+	return values
+}
+
 
 func (m *Hashmap) Iterator() <-chan *MemtableRecord {
 	ch := make(chan *MemtableRecord)

@@ -140,7 +140,6 @@ func main() {
 		var operacija string
 		scanner.Scan()
 		operacija = scanner.Text()
-
 		if operacija == "GET" {
 
 			if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {

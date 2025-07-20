@@ -4,8 +4,14 @@ import (
 	"fmt"
 	"math"
 	"project/BlockManager"
-	"sort"
 	"time"
+)
+
+//napravi enumeraciju za implementation type
+const (
+	SkipListType = "SkipList"
+	HashmapType  = "Hashmap"
+	BTreeType    = "BTree"
 )
 
 // interfejs za tabelu
@@ -13,6 +19,7 @@ type Table interface {
 	FindRecord(key string) *MemtableRecord
 	AddRecord(record *MemtableRecord)
 	Iterator() <-chan *MemtableRecord
+	GetSortedRecords() []*MemtableRecord // vraca sve vrednosti u tabeli
 	GetState() string // stanja tabele - empty, full, active
 	SetState(state string)
 	GetLinkedSegment() int // oznaka poslednjeg segmenta wall-a u koji je upisan neki zapis koji je zabelezen u ovoj tabeli
@@ -29,6 +36,10 @@ type Memtable struct {
 	tableSize     int
 	tables        []Table
 	activeTable   int // indeks aktivne tabele
+}
+
+func (table *Memtable) GetType() string {
+	return table.implementType
 }
 
 func (table *Memtable) GetActiveTable() int {
@@ -48,11 +59,11 @@ func NewMemtable(implementType string, NumOfTables int, tableSize int) *Memtable
 	for i := 0; i < NumOfTables; i++ {
 
 		switch implementType {
-		case "SkipList":
+		case SkipListType:
 			memtable.tables[i] = NewSkipList(int(math.Log2(float64(tableSize))))
-		case "Hashmap":
+		case HashmapType:
 			memtable.tables[i] = NewHashmap()
-		case "BTree":
+		case BTreeType:
 			memtable.tables[i] = NewTree(5)
 		}
 
@@ -138,16 +149,8 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 
 	fmt.Println("MEM - FLUSHING TABLE")
 	fmt.Println("MEM- brisem ", (*table).GetLinkedSegment(), " segmenata")
-	listOfRecords := make([]*MemtableRecord, 0) // lista zapisa koju cemo proslediti SStable-u
 
-	for record := range (*table).Iterator() {
-		listOfRecords = append(listOfRecords, record)
-	}
-
-	//sortiranje liste
-	sort.Slice(listOfRecords, func(i, j int) bool {
-		return listOfRecords[i].Key < listOfRecords[j].Key
-	})
+	listOfRecords := (*table).GetSortedRecords() // uzimamo sortirane vrednosti iz tabele
 
 	// azuriram segmente ostalih tabela
 	for i := 0; i < t.NumOfTables; i++ {

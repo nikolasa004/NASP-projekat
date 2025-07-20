@@ -308,3 +308,15 @@ func (t *Tree) inorder(node *TreeNode, ch chan<- *MemtableRecord) {
 		}
 	}
 }
+
+func (t *Tree) GetSortedRecords() []*MemtableRecord { // vrednosti u stablu su sortirane po kljucevima
+	if t.root == nil {
+		return nil
+	} else {
+		values := make([]*MemtableRecord, 0, t.size)
+		for record := range t.Iterator() {
+			values = append(values, record)
+		}
+		return values
+	}
+}
