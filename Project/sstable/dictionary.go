@@ -4,27 +4,43 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"os"
 	"project/BlockManager"
 	"project/Memtable"
 )
 
 type Dictionary struct { // Struktura mape koja sluzi za kompresiju kljuceva u SSTabeli
-	keysToVals map[string]int // mapira kljuceve na njihove indekse
-	size       int            // broj kljuceva u mapi
-	filename   string         // putanja do fajla u kom se cuva mapa
+	keysToVals map[string]int
+	size       int
+	filename   string
 }
 
 const KEY_SIZE_SIZE = 8
 
 func NewDictionary() *Dictionary {
+	dictPath := "sstable/dict"
+	os.MkdirAll(dictPath, os.ModePerm)
+
+	_, err := os.ReadDir(dictPath)
+	if err != nil {
+		log.Print("Folder za rečnik kompresije ne postoji, pokrecemo kreiranje novog")
+
+		err = os.MkdirAll(dictPath, 0755)
+		if err != nil {
+			log.Print("Greska pri kreiranju foldera za rečnik kompresije, nije moguce nastaviti sa radom")
+			log.Fatal("Greska: ", err)
+		}
+	}
+
+
 	return &Dictionary{
 		keysToVals: make(map[string]int),
 		size:       0,
-		filename:   "sstable/dict/dictionary.bin", // putanja do fajla u kom se cuva mapa
+		filename:   "sstable/dict/dictionary.bin",
 	}
 }
 
-func (d *Dictionary) Delete(key string) { // brise kljuc iz mape
+func (d *Dictionary) Delete(key string) {
 	delete(d.keysToVals, key)
 	if d.size > 0 {
 		d.size--
@@ -37,13 +53,13 @@ func (d *Dictionary) Get(key string) (string, bool) { // dobavlja vrednost za da
 }
 
 func (d *Dictionary) Put(key string) string { // dodaje kljuc u mapu i vraca njegovu mapiranu vrednost
-	val, exist := d.keysToVals[key] // proverava da li kljuc vec postoji
-	if !exist {                     // ako ne postoji, dodaje ga u mapu
+	val, exist := d.keysToVals[key]
+	if !exist {
 		d.keysToVals[key] = d.size
-		d.size++                           // povecava broj kljuceva u mapi
-		return fmt.Sprintf("%d", d.size-1) // vraca novu vrednost
+		d.size++ 
+		return fmt.Sprintf("%d", d.size-1)
 	}
-	return fmt.Sprintf("%d", val) // ako kljuc vec postoji
+	return fmt.Sprintf("%d", val)
 }
 
 func (d *Dictionary) Serialize() []byte {
@@ -67,44 +83,35 @@ func (d *Dictionary) Serialize() []byte {
 	return data
 }
 
-func (d *Dictionary) Deserialize(blockManager *BlockManager.BlockManager) { // ucitava mapu iz fajla
+func (d *Dictionary) Deserialize(blockManager *BlockManager.BlockManager) {
 	data, err := blockManager.ReadDictionary(d.filename)
 	if err != nil {
 		panic("Failed to read dictionary: " + err.Error())
 	}
-	if len(data) == 0 { // ako je mapa prazna, vraca se
+	if len(data) == 0 {
 		d.size = 0
 		d.keysToVals = make(map[string]int)
 		return
 	}
 
 	for i := 0; i < len(data); {
-		kSize := binary.LittleEndian.Uint64(data[i : i+KEY_SIZE_SIZE]) // cita velicinu kljuca
+		kSize := binary.LittleEndian.Uint64(data[i : i+KEY_SIZE_SIZE])
 		i += KEY_SIZE_SIZE
-		key := string(data[i : i+int(kSize)]) // cita kljuc
+		key := string(data[i : i+int(kSize)])
 		i += int(kSize)
-		val := binary.LittleEndian.Uint32(data[i : i+4]) // cita vrednost
+		val := binary.LittleEndian.Uint32(data[i : i+4])
 		i += 4
 
-		d.keysToVals[key] = int(val) // dodaje kljuc i vrednost u mapu
-		if d.size <= int(val) {      // ako je nova vrednost veca od broja kljuceva, povecava broj kljuceva
+		d.keysToVals[key] = int(val)
+		if d.size <= int(val) {
 			d.size = int(val) + 1
 		}
 	}
 	if d.size < 0 {
-		d.size = 0 // ako je broj kljuceva manji od 0, postavlja ga na 0
+		d.size = 0
 	}
 }
 
-// func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager ,records []*Memtable.MemtableRecord) {
-// 	for _, record := range records {
-// 		record.Key = d.Put(record.Key)
-// 	}
-// 	err := blockManager.WriteDictionary(d.Serialize(), d.filename)
-// 	if err != nil {
-// 		log.Fatalf("Failed to write dictionary: %v", err)
-// 	}
-// }
 
 func (d *Dictionary) StoreKeys(blockManager *BlockManager.BlockManager, records []*Memtable.MemtableRecord) []*Memtable.MemtableRecord {
 	compressedRecords := make([]*Memtable.MemtableRecord, 0, len(records))

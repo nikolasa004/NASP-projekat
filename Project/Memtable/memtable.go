@@ -150,7 +150,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 	fmt.Println("MEM - FLUSHING TABLE")
 	fmt.Println("MEM- brisem ", (*table).GetLinkedSegment(), " segmenata")
 
-	listOfRecords := (*table).GetSortedRecords() // uzimamo sortirane vrednosti iz tabele
+	listOfRecords := (*table).GetSortedRecords()
 
 	// azuriram segmente ostalih tabela
 	for i := 0; i < t.NumOfTables; i++ {
@@ -159,7 +159,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 
 	blockManager.UpdateWalStart((*table).GetLastBlockPosition()) // postavljam prvi koristan blok za novi prvi segment
 
-	(*table).Clear() //praznim celu tabelu
+	(*table).Clear()
 	return listOfRecords
 }
 

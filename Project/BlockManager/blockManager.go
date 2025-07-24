@@ -475,7 +475,7 @@ func (blockManager *BlockManager) PutRecord(value []byte) { //funkcija koja doda
 		if blockManager.currentBlock == blockManager.blocksPerSegment {
 			blockManager.currentBlock = 0
 
-			newBlock = blockManager.CreateNewSegment()
+			newBlock = blockManager.CreateNewWalSegment()
 			lastSegment = blockManager.segments[len(blockManager.segments)-1]
 			if len(newBlock)+len(value) > blockManager.blockSize {
 				paddingSize := blockManager.blockSize - len(newBlock)
@@ -885,7 +885,7 @@ func stitchFragments(fragments []WalRecord) *WalRecord {
 	}
 }
 
-func (blockManager *BlockManager) CreateNewSegment() []byte { //funkcija koja kreira novi segment u WAL-u
+func (blockManager *BlockManager) CreateNewWalSegment() []byte {
 	lastSegment := blockManager.segments[len(blockManager.segments)-1]
 	lastSegmentName := strings.TrimSuffix(lastSegment, ".log")
 	parts := strings.Split(lastSegmentName, "_")
@@ -974,7 +974,7 @@ func (blockManager *BlockManager) UpdateWalStart(startBlock int) { // azuriram p
 	}
 }
 
-func (bm *BlockManager) WriteDictionary(data []byte, filename string) error {
+func (bm *BlockManager) WriteDictionary(data []byte, filename string) error { // cuvanje recnika za kompresiju
 	if len(data) == 0 {
 		file, err := os.Create(filename)
 		if err != nil {

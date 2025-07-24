@@ -45,22 +45,19 @@ func main() {
 	scannerCacheSize := config.ScannerCache.ScannerCacheSize
 
 	lsmtree := lsmtree.NewLSMTree(maxLevels, filesPerLevel, tieredCompaction, multiplyer)
-	os.MkdirAll("sstable/dict", os.ModePerm)
 
 	blockManager := BlockManager.NewBlockManager(blockSize, blocksPerSegment, blockCacheSize)
 	var compressionDictionary = sstable.NewDictionary()
-	compressionDictionary.Deserialize(blockManager) // ucitavanje rečnika iz fajla
-	fmt.Printf("Sadrzaj recnika: %v\n", compressionDictionary)
+	compressionDictionary.Deserialize(blockManager)
 
 	cache := cache.NewLRUCache(cacheSize)
 
 	memtable := Memtable.NewMemtable(implementType, numOfTables, tableSize)
-	flushedReconstructRecords, flushed := memtable.Reconstruct(blockManager) // rekonstrukcija engine-a unosom zapisa iz Wal-a prilikom pokretanja
-	if flushed {                                                             // moze da dodje do flush-a ako je promenjena konfiguracija
+	flushedReconstructRecords, flushed := memtable.Reconstruct(blockManager)
+	if flushed {  // moze da dodje do flush-a ako je promenjena konfiguracija
 		for _, recs := range flushedReconstructRecords {
 			if hasCompression {
 				compressionDictionary.StoreKeys(blockManager, recs)
-				fmt.Println("Kompresovani ključevi su sačuvani u rečniku")
 			}
 			sstable.WriteSstable(recs, summarySampleRate, false, oneFile, blockManager, hasCompression, 0)
 		}
@@ -125,7 +122,7 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
-	//pomocnik := 8
+	pomocnik := 8
 
 	if lsmtree.TieredCompaction {
 		// Ako je size-tiered, dodajemo SSTable u LSM stablo
@@ -150,10 +147,10 @@ func main() {
 			kljuc := scanner.Text()
 			record, found := memtable.GetRecord(kljuc)
 			if found {
-				fmt.Println(string(record.Value))
+				fmt.Println("Pronadjen u Memtable-u: " + string(record.Value))
 				continue
-			} else if record != nil && !found {
-				fmt.Println("Nema takvog kljuca")
+			} else if record != nil && !found { // ako je pronađen zapis ali je izbrisan
+				fmt.Println("Nema takvog zapisa u sistemu")
 				continue
 			}
 
@@ -170,65 +167,60 @@ func main() {
 				continue
 			}
 
-			fmt.Println("Nema takvog kljuca u memtable-u, kešu i SSTable-ima")
-
+			fmt.Println("Nema takvog zapisa u sistemu")
 		} else if operacija == "PUT" {
 
 			if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
 				continue
 			}
 
-			fmt.Println("Unesite kljuc: ")
-			scanner.Scan()
-			kljuc := scanner.Text()
-			fmt.Println("Unesite vrednost: ")
-			scanner.Scan()
-			vrednost := scanner.Text()
+			// fmt.Println("Unesite kljuc: ")
+			// scanner.Scan()
+			// kljuc := scanner.Text()
+			// fmt.Println("Unesite vrednost: ")
+			// scanner.Scan()
+			// vrednost := scanner.Text()
+			pomocnik--
+			kljuc := "key" + strconv.Itoa(pomocnik)
 
-			/*
-				kljuc := "key" + strconv.Itoa(pomocnik)
+			var filename string
+			switch pomocnik {
 
-				var filename string
-				switch pomocnik {
-
-				case 7:
-					filename = "primer.txt"
-				case 6:
-					filename = "primer1.txt"
-				case 5:
-					filename = "primer2.txt"
-				case 4:
-					filename = "primer3.txt"
-				case 3:
-					filename = "primer4.txt"
-				case 2:
-					filename = "primer5.txt"
-				case 1:
-					filename = "primer6.txt"
-				case 0:
-					continue
-				}
+			case 7:
+				filename = "primer.txt"
+			case 6:
+				filename = "primer1.txt"
+			case 5:
+				filename = "primer2.txt"
+			case 4:
+				filename = "primer3.txt"
+			case 3:
+				filename = "primer4.txt"
+			case 2:
+				filename = "primer5.txt"
+			case 1:
+				filename = "primer6.txt"
+			case 0:
+				continue
+			}
 
 
-				file, err := os.ReadFile(filename)
-				if err != nil {
-					fmt.Println("Greska pri citanju fajla:", err)
-					continue
-				}
-				vrednost := string(file)
-			*/
+			file, err := os.ReadFile(filename)
+			if err != nil {
+				fmt.Println("Greska pri citanju fajla:", err)
+				continue
+			}
+			vrednost := string(file)
+
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize, false)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
-			fmt.Println("SS - One file: ", oneFile)
 			flushedRecords, flushed := memtable.PutRecord(false, kljuc, vrednost, blockManager, len(blockManager.GetSegments())-1)
-			fmt.Println("Flushed", flushed)
 			if flushed {
 				if hasCompression {
-					compressedRecords := compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
-					fmt.Printf("Kompresovani ključevi su sačuvani u rečniku: %v\n", compressedRecords)
-					sstable.WriteSstable(compressedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0) // upisivanje u SSTable
+					compressedRecords := compressionDictionary.StoreKeys(blockManager, flushedRecords)
+					sstable.WriteSstable(compressedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0)
 				} else {
 					sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0)
 				}
@@ -259,10 +251,11 @@ func main() {
 			flushedRecords, flushed := memtable.PutRecord(true, kljuc, "", blockManager, len(blockManager.GetSegments())-1)
 			if flushed {
 				if hasCompression {
-					compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
-					fmt.Println("Kompresovani ključevi su sačuvani u rečniku")
+					compressedRecords := compressionDictionary.StoreKeys(blockManager, flushedRecords) // čuvanje ključeva u rečniku
+					sstable.WriteSstable(compressedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0)
+				} else {
+					sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0) // upisivanje u SSTable
 				}
-				sstable.WriteSstable(flushedRecords, summarySampleRate, false, oneFile, blockManager, hasCompression, 0) // upisivanje u SSTable
 			}
 		} else if operacija == "VERIFY" {
 			fmt.Println("Unesite ime SSTable TOC fajla: ")

@@ -1,7 +1,0 @@
-0
-0
-data/sstable/L0/sstable-0004/sstable-0004-Data.bin
-data/sstable/L0/sstable-0004/sstable-0004-Index.bin
-data/sstable/L0/sstable-0004/sstable-0004-Summary.bin
-data/sstable/L0/sstable-0004/sstable-0004-Filter.bin
-data/sstable/L0/sstable-0004/sstable-0004-Merkle.bin

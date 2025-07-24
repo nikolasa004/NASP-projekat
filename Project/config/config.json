@@ -6,8 +6,8 @@
   },
   "Memtable": {
     "implementType": "BTree",
-    "numOfTables": 2,
-    "tableSize": 2
+    "numOfTables": 3,
+    "tableSize": 5
   },
   "SSTableManager": {
     "summarySampleRate": 2,
