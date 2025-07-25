@@ -11,7 +11,7 @@
   },
   "SSTableManager": {
     "summarySampleRate": 2,
-    "oneFile":false,
+    "oneFile":true,
     "compression": false
   },
   "Cache": {

@@ -1,0 +1,3 @@
+0
+1
+data/sstable/L2/sstable-0003/sstable-0003.bin
