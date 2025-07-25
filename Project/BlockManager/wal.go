@@ -628,6 +628,16 @@ func ReadAllRecordsSstable(block []byte, blockSize int64, isHeaderBlock bool, fo
 
 		records = append(records, newWalRecord)
 
+		if forSstable && tombstone {
+			size = uint64(crcSize) +
+				uint64(sizeSize) +
+				uint64(typeSize) +
+				uint64(timeStampSize) +
+				uint64(tombstoneSize) +
+				uint64(keySizeSize) +
+				keySize
+		}
+
 		i += int64(size)
 	}
 
