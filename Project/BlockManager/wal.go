@@ -34,24 +34,24 @@ type WalRecord struct { //struktura koja predstavlja zapis u WAL-u
 	Value     []byte
 }
 
-const ( //konstante koje predstavljaju pocetne pozicije svakog dela zapisa
-	CRC_SIZE        = 4
-	SIZE_SIZE       = 4
-	TYPE_SIZE       = 1
-	TIMESTAMP_SIZE  = 8
-	TOMBSTONE_SIZE  = 1
-	KEY_SIZE_SIZE   = 8
-	VALUE_SIZE_SIZE = 8
+// const ( //konstante koje predstavljaju pocetne pozicije svakog dela zapisa
+// 	CRC_SIZE        = 4
+// 	SIZE_SIZE       = 4
+// 	TYPE_SIZE       = 1
+// 	TIMESTAMP_SIZE  = 8
+// 	TOMBSTONE_SIZE  = 1
+// 	KEY_SIZE_SIZE   = 8
+// 	VALUE_SIZE_SIZE = 8
 
-	CRC_START        = 0
-	SIZE_START       = CRC_START + CRC_SIZE
-	TYPE_START       = SIZE_START + SIZE_SIZE
-	TIMESTAMP_START  = TYPE_START + TYPE_SIZE
-	TOMBSTONE_START  = TIMESTAMP_START + TIMESTAMP_SIZE
-	KEY_SIZE_START   = TOMBSTONE_START + TOMBSTONE_SIZE
-	VALUE_SIZE_START = KEY_SIZE_START + KEY_SIZE_SIZE
-	KEY_START        = VALUE_SIZE_START + VALUE_SIZE_SIZE
-)
+// 	CRC_START        = 0
+// 	SIZE_START       = CRC_START + CRC_SIZE
+// 	TYPE_START       = SIZE_START + SIZE_SIZE
+// 	TIMESTAMP_START  = TYPE_START + TYPE_SIZE
+// 	TOMBSTONE_START  = TIMESTAMP_START + TIMESTAMP_SIZE
+// 	KEY_SIZE_START   = TOMBSTONE_START + TOMBSTONE_SIZE
+// 	VALUE_SIZE_START = KEY_SIZE_START + KEY_SIZE_SIZE
+// 	KEY_START        = VALUE_SIZE_START + VALUE_SIZE_SIZE
+// )
 
 func CRC32(data []byte) uint32 { //funkcija koja racuna CRC32 vrednost za zadati niz bajtova
 	return crc32.ChecksumIEEE(data)
@@ -63,14 +63,44 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 	keySize := uint64(len(key))
 	valueSize := uint64(len(value))
 
-	constMaxSize := uint64(blockSize) - CRC_SIZE - SIZE_SIZE - TYPE_SIZE - TIMESTAMP_SIZE - TOMBSTONE_SIZE - KEY_SIZE_SIZE - VALUE_SIZE_SIZE
+	//moramo da izracunamo velicinu svakog dela zapisa da bismo mogli primetiti fragmentaciju
+	typeSize := 1
+
+	timeStamp := time.Now().Unix()
+	timeStampBytes := make([]byte, binary.MaxVarintLen64)
+	timeStampSize := binary.PutUvarint(timeStampBytes, uint64(timeStamp))
+
+	tombstoneSize := 1
+
+	keySizeBytes := make([]byte, binary.MaxVarintLen64)
+	keySizeSize := binary.PutUvarint(keySizeBytes, keySize)
+
+	valueSizeBytes := make([]byte, binary.MaxVarintLen64)
+	valueSizeSize := binary.PutUvarint(valueSizeBytes, valueSize)
+
+	crcSize := 4
+	fixedSize := uint64(typeSize) + uint64(timeStampSize) + uint64(tombstoneSize) + uint64(keySizeSize) + uint64(valueSizeSize) + keySize + valueSize + uint64(crcSize) //mora petlja jer se ne zna koliko ce zauzimati sam size
+	size := fixedSize
+	var sizeBytes []byte
+	var sizeSize int
+	for {
+		sizeBytes = make([]byte, binary.MaxVarintLen64)
+		sizeSize = binary.PutUvarint(sizeBytes, size)
+		newSize := fixedSize + uint64(sizeSize)
+		if newSize == size {
+			break
+		}
+		size = newSize
+	}
+
+	constMaxSize := uint64(blockSize) - uint64(crcSize) - uint64(sizeSize) - uint64(typeSize) - uint64(timeStampSize) - uint64(tombstoneSize) - uint64(keySizeSize) - uint64(valueSizeSize)
 
 	if keySize+valueSize <= constMaxSize {
 		walRecord := CreateWalRecord(tombstone, key, value, 0)
 		binaryRecord := walRecord.CreateBinaryRecord(forSstable)
 		binaryRecords = append(binaryRecords, binaryRecord)
 	} else {
-		fragmentedConstMaxSize := blockSize - CRC_SIZE - SIZE_SIZE - TYPE_SIZE - KEY_SIZE_SIZE - VALUE_SIZE_SIZE
+		fragmentedConstMaxSize := blockSize - crcSize - sizeSize - typeSize - keySizeSize - valueSizeSize
 
 		firstFragmentation := true
 		newKeySize := uint64(0)
@@ -137,40 +167,56 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 }
 
 func CreateWalRecord(tombstone bool, key string, value []byte, fragment int) WalRecord { //funkcija koja kreira objekat WalRecord, tj. objekat za zapis u WAL-u
-
-	crcData := make([]byte, 0)
-
 	keySize := uint64(len(key))
 	valueSize := uint64(len(value))
 
-	size := CRC_SIZE + SIZE_SIZE + TYPE_SIZE + TIMESTAMP_SIZE + TOMBSTONE_SIZE + KEY_SIZE_SIZE + VALUE_SIZE_SIZE + keySize + valueSize
+	typeSize := 1
+	typeBytes := make([]byte, typeSize)
+	typeBytes[0] = byte(fragment)
 
 	timeStamp := time.Now().Unix()
+	timeStampBytes := make([]byte, binary.MaxVarintLen64)
+	timeStampSize := binary.PutUvarint(timeStampBytes, uint64(timeStamp))
 
-	sizeBytes := make([]byte, SIZE_SIZE)
-	binary.LittleEndian.PutUint32(sizeBytes, uint32(size))
-	typeBytes := make([]byte, TYPE_SIZE)
-	typeBytes[0] = byte(fragment)
-	timeStampBytes := make([]byte, TIMESTAMP_SIZE)
-	binary.LittleEndian.PutUint64(timeStampBytes, uint64(timeStamp))
-	tombstoneBytes := make([]byte, TOMBSTONE_SIZE)
+	tombstoneSize := 1
+	tombstoneBytes := make([]byte, tombstoneSize)
 	if tombstone {
 		tombstoneBytes[0] = 1
 	} else {
 		tombstoneBytes[0] = 0
 	}
-	keySizeBytes := make([]byte, KEY_SIZE_SIZE)
-	binary.LittleEndian.PutUint64(keySizeBytes, keySize)
-	valueSizeBytes := make([]byte, VALUE_SIZE_SIZE)
-	binary.LittleEndian.PutUint64(valueSizeBytes, valueSize)
+
+	keySizeBytes := make([]byte, binary.MaxVarintLen64)
+	keySizeSize := binary.PutUvarint(keySizeBytes, keySize)
+
+	valueSizeBytes := make([]byte, binary.MaxVarintLen64)
+	valueSizeSize := binary.PutUvarint(valueSizeBytes, valueSize)
+
+	crcSize := 4                                                                                                                                                        //CRC mora biti uvek 4 bajta
+	fixedSize := uint64(typeSize) + uint64(timeStampSize) + uint64(tombstoneSize) + uint64(keySizeSize) + uint64(valueSizeSize) + keySize + valueSize + uint64(crcSize) //mora petlja jer se ne zna koliko ce zauzimati sam size
+	size := fixedSize
+	var sizeBytes []byte
+	var sizeSize int
+	for {
+		sizeBytes = make([]byte, binary.MaxVarintLen64)
+		sizeSize = binary.PutUvarint(sizeBytes, size)
+		newSize := fixedSize + uint64(sizeSize)
+		if newSize == size {
+			size = newSize
+			break
+		}
+		size = newSize
+	}
+
 	keyBytes := []byte(key)
 
-	crcData = append(crcData, sizeBytes...)
-	crcData = append(crcData, typeBytes...)
-	crcData = append(crcData, timeStampBytes...)
-	crcData = append(crcData, tombstoneBytes...)
-	crcData = append(crcData, keySizeBytes...)
-	crcData = append(crcData, valueSizeBytes...)
+	crcData := make([]byte, 0)
+	crcData = append(crcData, sizeBytes[:sizeSize]...)
+	crcData = append(crcData, typeBytes[0])
+	crcData = append(crcData, timeStampBytes[:timeStampSize]...)
+	crcData = append(crcData, tombstoneBytes[0])
+	crcData = append(crcData, keySizeBytes[:keySizeSize]...)
+	crcData = append(crcData, valueSizeBytes[:valueSizeSize]...)
 	crcData = append(crcData, keyBytes...)
 	crcData = append(crcData, value...)
 
@@ -193,20 +239,21 @@ func (walRecord *WalRecord) CreateBinaryRecord(forSstable bool) []byte { //funkc
 
 	bytesRecord := []byte{}
 
-	crcBytes := make([]byte, 4)
+	bytesUsed := 4
+	crcBytes := make([]byte, bytesUsed)
 	binary.LittleEndian.PutUint32(crcBytes, walRecord.CRC)
 	bytesRecord = append(bytesRecord, crcBytes...)
 
-	sizeBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(sizeBytes, walRecord.Size)
-	bytesRecord = append(bytesRecord, sizeBytes...)
+	sizeBytes := make([]byte, binary.MaxVarintLen64)
+	bytesUsed = binary.PutUvarint(sizeBytes, uint64(walRecord.Size))
+	bytesRecord = append(bytesRecord, sizeBytes[:bytesUsed]...)
 
-	typeBytes := []byte{byte(walRecord.Type)}
-	bytesRecord = append(bytesRecord, typeBytes...)
+	typeBytes := []byte{byte(walRecord.Type)} //svakako samo 1 bajt
+	bytesRecord = append(bytesRecord, typeBytes[0])
 
-	timeStampBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(timeStampBytes, walRecord.Timestamp)
-	bytesRecord = append(bytesRecord, timeStampBytes...)
+	timeStampBytes := make([]byte, binary.MaxVarintLen64)
+	bytesUsed = binary.PutUvarint(timeStampBytes, uint64(walRecord.Timestamp))
+	bytesRecord = append(bytesRecord, timeStampBytes[:bytesUsed]...)
 
 	tombstoneBytes := make([]byte, 1)
 	if walRecord.Tombstone {
@@ -214,16 +261,16 @@ func (walRecord *WalRecord) CreateBinaryRecord(forSstable bool) []byte { //funkc
 	} else {
 		tombstoneBytes[0] = 0
 	}
-	bytesRecord = append(bytesRecord, tombstoneBytes...)
+	bytesRecord = append(bytesRecord, tombstoneBytes[0])
 
-	keySizeBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(keySizeBytes, walRecord.KeySize)
-	bytesRecord = append(bytesRecord, keySizeBytes...)
+	keySizeBytes := make([]byte, binary.MaxVarintLen64)
+	bytesUsed = binary.PutUvarint(keySizeBytes, walRecord.KeySize)
+	bytesRecord = append(bytesRecord, keySizeBytes[:bytesUsed]...)
 
 	if !(forSstable && walRecord.Tombstone) {
-		valueSizeBytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(valueSizeBytes, walRecord.ValueSize)
-		bytesRecord = append(bytesRecord, valueSizeBytes...)
+		valueSizeBytes := make([]byte, binary.MaxVarintLen64)
+		bytesUsed = binary.PutUvarint(valueSizeBytes, walRecord.ValueSize)
+		bytesRecord = append(bytesRecord, valueSizeBytes[:bytesUsed]...)
 	}
 
 	keyBytes := []byte(walRecord.Key)
@@ -236,29 +283,42 @@ func (walRecord *WalRecord) CreateBinaryRecord(forSstable bool) []byte { //funkc
 }
 
 func CreateFragmentedWalRecord(key string, value []byte, fragment int) WalRecord { //funkcija koja kreira fragmentisani zapis
-	crcData := make([]byte, 0)
-
 	keySize := uint64(len(key))
 	valueSize := uint64(len(value))
 
-	size := CRC_SIZE + SIZE_SIZE + TYPE_SIZE + KEY_SIZE_SIZE + VALUE_SIZE_SIZE + keySize + valueSize
+	typeSize := 1
+	typeBytes := make([]byte, typeSize)
+	typeBytes[0] = byte(fragment)
 
-	typeRecord := uint8(fragment)
+	keySizeBytes := make([]byte, binary.MaxVarintLen64)
+	keySizeSize := binary.PutUvarint(keySizeBytes, keySize)
 
-	sizeBytes := make([]byte, SIZE_SIZE)
-	binary.LittleEndian.PutUint32(sizeBytes, uint32(size))
-	typeBytes := make([]byte, TYPE_SIZE)
-	typeBytes[0] = byte(typeRecord)
-	keySizeBytes := make([]byte, KEY_SIZE_SIZE)
-	binary.LittleEndian.PutUint64(keySizeBytes, keySize)
-	valueSizeBytes := make([]byte, VALUE_SIZE_SIZE)
-	binary.LittleEndian.PutUint64(valueSizeBytes, valueSize)
+	valueSizeBytes := make([]byte, binary.MaxVarintLen64)
+	valueSizeSize := binary.PutUvarint(valueSizeBytes, valueSize)
+
+	crcSize := 4                                                                                                        //CRC mora biti uvek 4 bajta
+	fixedSize := uint64(typeSize) + uint64(keySizeSize) + uint64(valueSizeSize) + keySize + valueSize + uint64(crcSize) //mora petlja jer se ne zna koliko ce zauzimati sam size
+	size := fixedSize
+	var sizeBytes []byte
+	var sizeSize int
+	for {
+		sizeBytes = make([]byte, binary.MaxVarintLen64)
+		sizeSize = binary.PutUvarint(sizeBytes, size)
+		newSize := fixedSize + uint64(sizeSize)
+		if newSize == size {
+			size = newSize
+			break
+		}
+		size = newSize
+	}
+
 	keyBytes := []byte(key)
 
-	crcData = append(crcData, sizeBytes...)
-	crcData = append(crcData, typeBytes...)
-	crcData = append(crcData, keySizeBytes...)
-	crcData = append(crcData, valueSizeBytes...)
+	crcData := make([]byte, 0)
+	crcData = append(crcData, sizeBytes[:sizeSize]...)
+	crcData = append(crcData, typeBytes[0])
+	crcData = append(crcData, keySizeBytes[:keySizeSize]...)
+	crcData = append(crcData, valueSizeBytes[:valueSizeSize]...)
 	crcData = append(crcData, keyBytes...)
 	crcData = append(crcData, value...)
 
@@ -267,7 +327,7 @@ func CreateFragmentedWalRecord(key string, value []byte, fragment int) WalRecord
 	return WalRecord{
 		CRC:       crc,
 		Size:      uint32(size),
-		Type:      typeRecord,
+		Type:      typeBytes[0],
 		Timestamp: 0,
 		Tombstone: false,
 		KeySize:   keySize,
@@ -280,25 +340,26 @@ func CreateFragmentedWalRecord(key string, value []byte, fragment int) WalRecord
 func (walRecord *WalRecord) CreateFragmentedBinaryRecord(forSstable bool) []byte { //funkcija koja pravi niz bajtova od fragmentisanog zapisa
 	bytesRecord := []byte{}
 
-	crcBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(crcBytes, walRecord.CRC)
-	bytesRecord = append(bytesRecord, crcBytes...)
+	bytesUsed := 4
+	crcBuffer := make([]byte, bytesUsed)
+	binary.LittleEndian.PutUint32(crcBuffer, walRecord.CRC)
+	bytesRecord = append(bytesRecord, crcBuffer...)
 
-	sizeBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(sizeBytes, walRecord.Size)
-	bytesRecord = append(bytesRecord, sizeBytes...)
+	sizeBuffer := make([]byte, binary.MaxVarintLen64)
+	bytesUsed = binary.PutUvarint(sizeBuffer, uint64(walRecord.Size))
+	bytesRecord = append(bytesRecord, sizeBuffer[:bytesUsed]...)
 
-	typeBytes := []byte{byte(walRecord.Type)}
+	typeBytes := []byte{byte(walRecord.Type)} //svakako samo 1 bajt
 	bytesRecord = append(bytesRecord, typeBytes...)
 
-	keySizeBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(keySizeBytes, walRecord.KeySize)
-	bytesRecord = append(bytesRecord, keySizeBytes...)
+	keySizeBuffer := make([]byte, binary.MaxVarintLen64)
+	bytesUsed = binary.PutUvarint(keySizeBuffer, walRecord.KeySize)
+	bytesRecord = append(bytesRecord, keySizeBuffer[:bytesUsed]...)
 
 	if !(forSstable && walRecord.Tombstone) {
-		valueSizeBytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(valueSizeBytes, walRecord.ValueSize)
-		bytesRecord = append(bytesRecord, valueSizeBytes...)
+		valueSizeBytes := make([]byte, binary.MaxVarintLen64)
+		bytesUsed = binary.PutUvarint(valueSizeBytes, walRecord.ValueSize)
+		bytesRecord = append(bytesRecord, valueSizeBytes[:bytesUsed]...)
 	}
 
 	keyBytes := []byte(walRecord.Key)
@@ -320,105 +381,93 @@ func ReadAllRecords(block []byte, blockSize int64, isHeaderBlock bool) []WalReco
 	i := int64(0)
 
 	for i < blockSize {
-		if i+int64(CRC_SIZE+SIZE_SIZE+TYPE_SIZE+TIMESTAMP_SIZE+TOMBSTONE_SIZE+KEY_SIZE_SIZE+VALUE_SIZE_SIZE) > blockSize { //provera da nije padding
+		crcStart := i
+		crcSize := 4 //CRC mora biti uvek 4 bajta
+
+		if crcStart+int64(crcSize) >= blockSize { //ako je slucajno padding
 			break
 		}
-		crcBytes := make([]byte, 4)
-		copy(crcBytes, block[i:i+CRC_SIZE])
 
+		crcBytes := make([]byte, 4)
+		copy(crcBytes, block[crcStart:crcStart+4])
 		crc := binary.LittleEndian.Uint32(crcBytes)
 
-		if crc == 0 { //druga provera da nije padding
+		sizeStart := crcStart + int64(crcSize)
+		if sizeStart >= blockSize { //ako je slucajno padding
+			break
+		}
+		size, sizeSize := binary.Uvarint(block[sizeStart:])
+		if size == 0 { //provera da nije padding
 			break
 		}
 
-		sizeBytes := make([]byte, 4)
-		copy(sizeBytes, block[i+SIZE_START:i+SIZE_START+SIZE_SIZE])
-
-		size := binary.LittleEndian.Uint32(sizeBytes)
-
 		typeBytes := make([]byte, 1)
-		copy(typeBytes, block[i+TYPE_START:i+TYPE_START+TYPE_SIZE])
+		typeStart := sizeStart + int64(sizeSize)
+		typeSize := 1
+		copy(typeBytes, block[typeStart:typeStart+int64(typeSize)])
 
 		typeRecord := typeBytes[0]
 
+		var timeStampStart int64
 		var timeStamp uint64
+		var timeStampSize int
+		var tombstoneStart int64
 		var tombstone bool
+		var tombstoneSize int
 		var tombstoneBytes []byte
-		var timeStampBytes []byte
-		NEW_KEY_SIZE_START := TYPE_START + TYPE_SIZE
-		NEW_VALUE_SIZE_START := NEW_KEY_SIZE_START + KEY_SIZE_SIZE
-		NEW_KEY_START := NEW_VALUE_SIZE_START + VALUE_SIZE_SIZE
 		if typeRecord == 0 || typeRecord == 1 {
 
-			timeStampBytes = make([]byte, 8)
-			copy(timeStampBytes, block[i+TIMESTAMP_START:i+TIMESTAMP_START+TIMESTAMP_SIZE])
-
-			timeStamp = binary.LittleEndian.Uint64(timeStampBytes)
+			timeStampStart = typeStart + int64(typeSize)
+			timeStamp, timeStampSize = binary.Uvarint(block[timeStampStart:])
 
 			tombstoneBytes = make([]byte, 1)
-			copy(tombstoneBytes, block[i+TOMBSTONE_START:i+TOMBSTONE_START+TOMBSTONE_SIZE])
-
+			tombstoneStart = timeStampStart + int64(timeStampSize)
+			tombstoneSize = 1
+			copy(tombstoneBytes, block[tombstoneStart:tombstoneStart+int64(tombstoneSize)])
 			if tombstoneBytes[0] == 1 {
 				tombstone = true
 			} else {
 				tombstone = false
 			}
-
 		}
 
-		keySizeBytes := make([]byte, 8)
+		var keySizeStart int64
+		var keySize uint64
+		var keySizeSize int
 		if typeRecord == 0 || typeRecord == 1 {
-			copy(keySizeBytes, block[i+KEY_SIZE_START:i+KEY_SIZE_START+KEY_SIZE_SIZE])
+			keySizeStart = tombstoneStart + int64(tombstoneSize)
 		} else {
-			copy(keySizeBytes, block[i+int64(NEW_KEY_SIZE_START):i+int64(NEW_KEY_SIZE_START)+KEY_SIZE_SIZE])
+			keySizeStart = typeStart + int64(typeSize)
 		}
+		keySize, keySizeSize = binary.Uvarint(block[keySizeStart:])
 
-		keySize := binary.LittleEndian.Uint64(keySizeBytes)
+		valueSizeStart := keySizeStart + int64(keySizeSize)
+		valueSize, valueSizeSize := binary.Uvarint(block[valueSizeStart:])
 
-		valueSizeBytes := make([]byte, 8)
-		if typeRecord == 0 || typeRecord == 1 {
-			copy(valueSizeBytes, block[i+VALUE_SIZE_START:i+VALUE_SIZE_START+VALUE_SIZE_SIZE])
-		} else {
-			copy(valueSizeBytes, block[i+int64(NEW_VALUE_SIZE_START):i+int64(NEW_VALUE_SIZE_START)+VALUE_SIZE_SIZE])
-		}
-
-		valueSize := binary.LittleEndian.Uint64(valueSizeBytes)
-
+		keyStart := valueSizeStart + int64(valueSizeSize)
 		keyBytes := make([]byte, keySize)
-		if typeRecord == 0 || typeRecord == 1 {
-			copy(keyBytes, block[i+KEY_START:i+KEY_START+int64(keySize)])
-		} else {
-
-			copy(keyBytes, block[i+int64(NEW_KEY_START):i+int64(NEW_KEY_START)+int64(keySize)])
-		}
-
+		copy(keyBytes, block[keyStart:keyStart+int64(keySize)])
 		key := string(keyBytes)
 
+		valueStart := keyStart + int64(keySize)
 		valueBytes := make([]byte, valueSize)
-		if typeRecord == 0 || typeRecord == 1 {
-			copy(valueBytes, block[i+KEY_START+int64(keySize):i+KEY_START+int64(keySize)+int64(valueSize)])
-		} else {
-			copy(valueBytes, block[i+int64(NEW_KEY_START)+int64(keySize):i+int64(NEW_KEY_START)+int64(keySize)+int64(valueSize)])
-		}
+		copy(valueBytes, block[valueStart:valueStart+int64(valueSize)])
 
 		readCRCData := make([]byte, 0) //provera CRC32 vrednosti
-
-		readCRCData = append(readCRCData, sizeBytes...)
+		readCRCData = append(readCRCData, block[sizeStart:sizeStart+int64(sizeSize)]...)
 		readCRCData = append(readCRCData, typeBytes...)
-
 		if typeRecord == 0 || typeRecord == 1 {
-			readCRCData = append(readCRCData, timeStampBytes...)
+			readCRCData = append(readCRCData, block[timeStampStart:timeStampStart+int64(timeStampSize)]...)
 			readCRCData = append(readCRCData, tombstoneBytes...)
 		}
-		readCRCData = append(readCRCData, keySizeBytes...)
-		readCRCData = append(readCRCData, valueSizeBytes...)
+		readCRCData = append(readCRCData, block[keySizeStart:keySizeStart+int64(keySizeSize)]...)
+		readCRCData = append(readCRCData, block[valueSizeStart:valueSizeStart+int64(valueSizeSize)]...)
 		readCRCData = append(readCRCData, keyBytes...)
 		readCRCData = append(readCRCData, valueBytes...)
 
 		readCRC := CRC32(readCRCData)
 
-		if readCRC != crc {
+		if readCRC != uint32(crc) {
 			log.Print("CRC32 vrednost nije ispravna, zapis je korumpiran")
 			log.Print("Ovaj zapis je preskocen")
 			i += int64(size) //preskacem ovaj zapis
@@ -426,8 +475,8 @@ func ReadAllRecords(block []byte, blockSize int64, isHeaderBlock bool) []WalReco
 		}
 
 		newWalRecord := WalRecord{
-			CRC:       crc,
-			Size:      size,
+			CRC:       uint32(crc),
+			Size:      uint32(size),
 			Type:      typeRecord,
 			Timestamp: timeStamp,
 			Tombstone: tombstone,
@@ -455,134 +504,110 @@ func ReadAllRecordsSstable(block []byte, blockSize int64, isHeaderBlock bool, fo
 	i := int64(0)
 
 	for i < blockSize {
-		if i+int64(CRC_SIZE+SIZE_SIZE+TYPE_SIZE+TIMESTAMP_SIZE+TOMBSTONE_SIZE+KEY_SIZE_SIZE+VALUE_SIZE_SIZE) > blockSize { //provera da nije padding
+		crcStart := i
+		crcSize := 4 //CRC mora biti uvek 4 bajta
+
+		if crcStart+int64(crcSize) >= blockSize { //ako je slucajno padding
 			break
 		}
-		crcBytes := make([]byte, 4)
-		copy(crcBytes, block[i:i+CRC_SIZE])
 
+		crcBytes := make([]byte, 4)
+		copy(crcBytes, block[crcStart:crcStart+4])
 		crc := binary.LittleEndian.Uint32(crcBytes)
 
-		if crc == 0 { //druga provera da nije padding
+		sizeStart := crcStart + int64(crcSize)
+		if sizeStart >= blockSize { //ako je slucajno padding
+			break
+		}
+		size, sizeSize := binary.Uvarint(block[sizeStart:])
+		if size == 0 { //provera da nije padding
 			break
 		}
 
-		sizeBytes := make([]byte, 4)
-		copy(sizeBytes, block[i+SIZE_START:i+SIZE_START+SIZE_SIZE])
-
-		size := binary.LittleEndian.Uint32(sizeBytes)
-
 		typeBytes := make([]byte, 1)
-		copy(typeBytes, block[i+TYPE_START:i+TYPE_START+TYPE_SIZE])
+		typeStart := sizeStart + int64(sizeSize)
+		typeSize := 1
+		copy(typeBytes, block[typeStart:typeStart+int64(typeSize)])
 
 		typeRecord := typeBytes[0]
 
+		var timeStampStart int64
 		var timeStamp uint64
+		var timeStampSize int
+		var tombstoneStart int64
 		var tombstone bool
+		var tombstoneSize int
 		var tombstoneBytes []byte
-		var timeStampBytes []byte
-
 		if typeRecord == 0 || typeRecord == 1 {
 
-			timeStampBytes = make([]byte, 8)
-			copy(timeStampBytes, block[i+TIMESTAMP_START:i+TIMESTAMP_START+TIMESTAMP_SIZE])
-
-			timeStamp = binary.LittleEndian.Uint64(timeStampBytes)
+			timeStampStart = typeStart + int64(typeSize)
+			timeStamp, timeStampSize = binary.Uvarint(block[timeStampStart:])
 
 			tombstoneBytes = make([]byte, 1)
-			copy(tombstoneBytes, block[i+TOMBSTONE_START:i+TOMBSTONE_START+TOMBSTONE_SIZE])
-
+			tombstoneStart = timeStampStart + int64(timeStampSize)
+			tombstoneSize = 1
+			copy(tombstoneBytes, block[tombstoneStart:tombstoneStart+int64(tombstoneSize)])
 			if tombstoneBytes[0] == 1 {
 				tombstone = true
 			} else {
 				tombstone = false
 			}
-
 		}
 
-		NEW_KEY_SIZE_START := TYPE_START + TYPE_SIZE
-		NEW_VALUE_SIZE_START := NEW_KEY_SIZE_START + KEY_SIZE_SIZE
-
-		// Ovo sam uveo jer u sstable zapisima kada je tombstone 1 izostavlja se u potpunosti value i value size
-		var NEW_KEY_START int64
-		if forSstable && tombstone {
-			NEW_KEY_START = int64(NEW_VALUE_SIZE_START)
-		} else {
-			NEW_KEY_START = int64(NEW_VALUE_SIZE_START + VALUE_SIZE_SIZE)
-		}
-
-		keySizeBytes := make([]byte, 8)
+		var keySizeStart int64
+		var keySize uint64
+		var keySizeSize int
 		if typeRecord == 0 || typeRecord == 1 {
-			copy(keySizeBytes, block[i+KEY_SIZE_START:i+KEY_SIZE_START+KEY_SIZE_SIZE])
+			keySizeStart = tombstoneStart + int64(tombstoneSize)
 		} else {
-			copy(keySizeBytes, block[i+int64(NEW_KEY_SIZE_START):i+int64(NEW_KEY_SIZE_START)+KEY_SIZE_SIZE])
+			keySizeStart = typeStart + int64(typeSize)
 		}
+		keySize, keySizeSize = binary.Uvarint(block[keySizeStart:])
 
-		keySize := binary.LittleEndian.Uint64(keySizeBytes)
-
-		// Ovo sam uveo jer u sstable zapisima kada je tombstone 1 izostavlja se u potpunosti value i value size
-		var valueSizeBytes []byte
+		var valueSizeStart int64
 		var valueSize uint64
-		var valueBytes []byte
-		var keyBytes = make([]byte, keySize)
-
-		if forSstable && tombstone {
-			valueSizeBytes = make([]byte, 0)
-			valueSize = 0
-
-			if typeRecord == 0 || typeRecord == 1 {
-				copy(keyBytes, block[i+KEY_START-8:i+KEY_START-8+int64(keySize)])
-			} else {
-				copy(keyBytes, block[i+int64(NEW_KEY_START):i+int64(NEW_KEY_START)+int64(keySize)])
-			}
-
+		var valueSizeSize int
+		var keyStart int64
+		if forSstable && !tombstone { // ako je obrisan, onda se valueSize ne cita
+			valueSizeStart = keySizeStart + int64(keySizeSize)
+			valueSize, valueSizeSize = binary.Uvarint(block[valueSizeStart:])
+			keyStart = valueSizeStart + int64(valueSizeSize)
 		} else {
-			valueSizeBytes = make([]byte, 8)
-			if typeRecord == 0 || typeRecord == 1 {
-				copy(valueSizeBytes, block[i+VALUE_SIZE_START:i+VALUE_SIZE_START+VALUE_SIZE_SIZE])
-			} else {
-				copy(valueSizeBytes, block[i+int64(NEW_VALUE_SIZE_START):i+int64(NEW_VALUE_SIZE_START)+VALUE_SIZE_SIZE])
-			}
-
-			valueSize = binary.LittleEndian.Uint64(valueSizeBytes)
-
-			if typeRecord == 0 || typeRecord == 1 {
-				copy(keyBytes, block[i+KEY_START:i+KEY_START+int64(keySize)])
-			} else {
-				copy(keyBytes, block[i+int64(NEW_KEY_START):i+int64(NEW_KEY_START)+int64(keySize)])
-			}
+			keyStart = keySizeStart + int64(keySizeSize)
 		}
 
+		keyBytes := make([]byte, keySize)
+		copy(keyBytes, block[keyStart:keyStart+int64(keySize)])
 		key := string(keyBytes)
 
-		if forSstable && tombstone {
-			valueBytes = []byte{} //ako je tombstone 1, onda value ne postoji
-		} else {
+		var valueStart int64
+		var valueBytes []byte
+		if forSstable && !tombstone {
+			valueStart = keyStart + int64(keySize)
 			valueBytes = make([]byte, valueSize)
-			if typeRecord == 0 || typeRecord == 1 {
-				copy(valueBytes, block[i+KEY_START+int64(keySize):i+KEY_START+int64(keySize)+int64(valueSize)])
-			} else {
-				copy(valueBytes, block[i+int64(NEW_KEY_START)+int64(keySize):i+int64(NEW_KEY_START)+int64(keySize)+int64(valueSize)])
-			}
+			copy(valueBytes, block[valueStart:valueStart+int64(valueSize)])
 		}
 
 		readCRCData := make([]byte, 0) //provera CRC32 vrednosti
 
-		readCRCData = append(readCRCData, sizeBytes...)
+		readCRCData = append(readCRCData, block[sizeStart:sizeStart+int64(sizeSize)]...)
 		readCRCData = append(readCRCData, typeBytes...)
-
 		if typeRecord == 0 || typeRecord == 1 {
-			readCRCData = append(readCRCData, timeStampBytes...)
+			readCRCData = append(readCRCData, block[timeStampStart:timeStampStart+int64(timeStampSize)]...)
 			readCRCData = append(readCRCData, tombstoneBytes...)
 		}
-		readCRCData = append(readCRCData, keySizeBytes...)
-		readCRCData = append(readCRCData, valueSizeBytes...)
+		readCRCData = append(readCRCData, block[keySizeStart:keySizeStart+int64(keySizeSize)]...)
+		if forSstable && !tombstone {
+			readCRCData = append(readCRCData, block[valueSizeStart:valueSizeStart+int64(valueSizeSize)]...)
+		}
 		readCRCData = append(readCRCData, keyBytes...)
-		readCRCData = append(readCRCData, valueBytes...)
+		if forSstable && !tombstone {
+			readCRCData = append(readCRCData, valueBytes...)
+		}
 
 		readCRC := CRC32(readCRCData)
 
-		if readCRC != crc && !forSstable {
+		if readCRC != uint32(crc) && !forSstable {
 			log.Print("CRC32 vrednost nije ispravna, zapis je korumpiran")
 			log.Print("Ovaj zapis je preskocen")
 			i += int64(size) //preskacem ovaj zapis
@@ -590,8 +615,8 @@ func ReadAllRecordsSstable(block []byte, blockSize int64, isHeaderBlock bool, fo
 		}
 
 		newWalRecord := WalRecord{
-			CRC:       crc,
-			Size:      size,
+			CRC:       uint32(crc),
+			Size:      uint32(size),
 			Type:      typeRecord,
 			Timestamp: timeStamp,
 			Tombstone: tombstone,
@@ -602,14 +627,6 @@ func ReadAllRecordsSstable(block []byte, blockSize int64, isHeaderBlock bool, fo
 		}
 
 		records = append(records, newWalRecord)
-
-		if forSstable && tombstone {
-			size = uint32(
-				CRC_SIZE + SIZE_SIZE + TYPE_SIZE +
-					TIMESTAMP_SIZE + TOMBSTONE_SIZE +
-					KEY_SIZE_SIZE + len(keyBytes),
-			)
-		}
 
 		i += int64(size)
 	}
