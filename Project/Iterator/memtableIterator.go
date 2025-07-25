@@ -2,6 +2,7 @@ package Iterator
 
 import (
 	"project/Memtable"
+	"strings"
 )
 
 type MemtableIterator struct {
@@ -18,7 +19,7 @@ type MemtableIterator struct {
 	pagesMap           map[int]int
 }
 
-func NewMemtableIterator(memtableIndex int, currentIndex int, memtable *Memtable.Memtable,sortedRecords []*Memtable.MemtableRecord,
+func NewMemtableIterator(memtableIndex int, currentIndex int, memtable *Memtable.Memtable, sortedRecords []*Memtable.MemtableRecord,
 	isPrefixScan bool, prefix string,
 	isRangeScan bool, lowerBound string, upperBound string) *MemtableIterator {
 	iterator := &MemtableIterator{
@@ -54,7 +55,11 @@ func (m *MemtableIterator) GetValue() *ScanRecord {
 		record := m.sortedRecords[m.currentRecordIndex]
 		if record == nil {
 			return nil
-		} 
+		}
+
+		if isDisallowed(record.Key) {
+			return nil
+		}
 
 		if m.isPrefixScan && checkPrefixMatch(m.prefix, record.Key) {
 			return NewScanRecord(record.Key, record.Value, record.Tombstone)
@@ -115,12 +120,18 @@ func GenerateIteratorsPrefix(memtable *Memtable.Memtable, prefix string) ([]Inte
 
 	for table := range memtable.Iterator() {
 		for record := range table.Iterator() {
+
+			if isDisallowed(record.Key) {
+				recordIndex++
+				continue
+			}
+
 			if checkPrefixMatch(prefix, record.Key) {
 				var sortedRecords []*Memtable.MemtableRecord = nil
 				if memtable.GetType() == Memtable.HashmapType {
 					sortedRecords = table.GetSortedRecords()
 				}
-				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable,sortedRecords, true, prefix, false, "", "")
+				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable, sortedRecords, true, prefix, false, "", "")
 				iterator.pagesMap[0] = recordIndex      // cuvanje indeksa prvog zapisa kao pocetka prve stranice
 				iterators = append(iterators, iterator) // bez &, jer NewMemtableIterator već vraća *MemtableIterator
 				if recordIndex > maxRecordIndex {
@@ -144,12 +155,18 @@ func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, uppe
 
 	for table := range memtable.Iterator() {
 		for record := range table.Iterator() {
+
+			if isDisallowed(record.Key) {
+				recordIndex++
+				continue
+			}
+
 			if record.Key >= lowerBound && record.Key <= upperBound {
 				var sortedRecords []*Memtable.MemtableRecord = nil
 				if memtable.GetType() == Memtable.HashmapType {
 					sortedRecords = table.GetSortedRecords()
 				}
-				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable,sortedRecords, false, "", true, lowerBound, upperBound)
+				iterator := NewMemtableIterator(tableIndex, recordIndex, memtable, sortedRecords, false, "", true, lowerBound, upperBound)
 				iterator.pagesMap[0] = recordIndex      // cuvanje indeksa prvog zapisa kao pocetka prve stranice
 				iterators = append(iterators, iterator) // bez &
 				if recordIndex > maxRecordIndex {
@@ -166,4 +183,14 @@ func GenerateIteratorsRange(memtable *Memtable.Memtable, lowerBound string, uppe
 		tableIndex++
 	}
 	return iterators, maxRecordIndex
+}
+
+func isDisallowed(key string) bool {
+	disallowed := []string{"bf_", "cms_", "__rateLimit__", "hll_", "sh_"}
+	for _, prefix := range disallowed {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
