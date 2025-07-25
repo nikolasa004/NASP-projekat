@@ -29,6 +29,7 @@ type SstableIterator struct {
 }
 
 func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix string, lower string, upper string, startingIndex int, hasCompression bool, compressionDictionary *sstable.Dictionary) *SstableIterator {
+	disallowedPrefixes := []string{"bf_", "cms_", "__rateLimit__", "hll_", "sh_"}
 	toc, err := sstable.ReadTOCFile(tocPath)
 	if err != nil {
 		fmt.Println("Greška pri čitanju TOC fajla:", err)
@@ -88,10 +89,8 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 	var keyOffsetPairs []sstable.KeyOffsetPair
 	if prefix != "" {
 		_, indexStart = summary.FindPrefix(prefix)
-		fmt.Println("Index start za prefix:", prefix, "->", indexStart)
 	} else if lower != "" {
 		_, indexStart = summary.FindRange(lower, upper)
-		fmt.Println("Index start za lower bound:", lower, "->", indexStart)
 	} else {
 		indexStart = 0 // default
 	}
@@ -109,6 +108,17 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 			realKey = compressionDictionary.FindOriginalKey(pair.Key)
 		} else {
 			realKey = pair.Key
+		}
+
+		skip := false
+		for _, prefix := range disallowedPrefixes {
+			if strings.HasPrefix(realKey, prefix) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue // preskoci kljuceve vezane za types
 		}
 
 		if prefix != "" && strings.HasPrefix(realKey, prefix) {
