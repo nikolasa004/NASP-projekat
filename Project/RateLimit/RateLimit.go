@@ -87,7 +87,7 @@ func CheckRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, blockMan
 			fmt.Println("Greška pri čitanju token bucketa iz memtable-a:", err)
 			return false
 		}
-	} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager, compressionDictionary); found {
+	} else if SSrecord, found, _, _ := sstable.FindInSstables(tokenBucketKey, *blockManager, compressionDictionary); found {
 		state, err = DeserializeRateLimit([]byte(SSrecord.Value))
 		if err != nil {
 			fmt.Println("Greška pri čitanju token bucketa iz SSTable-a:", err)

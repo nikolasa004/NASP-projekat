@@ -229,7 +229,7 @@ func FindDataRecordBM(key string, segmentOffset uint64, filename string, bm Bloc
 		if err != nil {
 			log.Fatal("Error reading records from blocks: ", err)
 		}
-		if records == nil || len(records) == 0 {
+		if len(records) == 0 {
 			break
 		}
 		for _, record := range records {

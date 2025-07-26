@@ -631,7 +631,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 	}
 }
 
-func FindInSstables(key string, blockManager BlockManager.BlockManager, dictionary *Dictionary) (BlockManager.WalRecord, bool) {
+func FindInSstables(key string, blockManager BlockManager.BlockManager, dictionary *Dictionary) (BlockManager.WalRecord, bool, bool, string) {
 	masterToc, err := os.OpenFile("data/sstable/master-toc.txt", os.O_RDONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
@@ -674,15 +674,15 @@ func FindInSstables(key string, blockManager BlockManager.BlockManager, dictiona
 			dataRecord, found := FindInSstable(key, tocfilename, blockManager, dictionary)
 			if found {
 				if !dataRecord.Tombstone {
-					return *dataRecord, true
+					return *dataRecord, true, true, sstableName
 				} else {
-					return BlockManager.WalRecord{}, false
+					return BlockManager.WalRecord{}, false, true, sstableName
 				}
 			}
 		}
 	}
 
-	return BlockManager.WalRecord{}, false
+	return BlockManager.WalRecord{}, false, false, ""
 }
 
 // Napravio sam TOC file kako bi lakse mogao da se pristupi svim fajlovima

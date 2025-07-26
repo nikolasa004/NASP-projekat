@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"project/BlockManager"
 	"project/Memtable"
 	"project/RateLimit"
@@ -54,7 +55,7 @@ func promptForKey(scanner *bufio.Scanner, prefix, msg string) (string, bool) {
 func loadFromStorage(key string, memtable *Memtable.Memtable, blockManager *BlockManager.BlockManager, compressionDict *sstable.Dictionary) ([]byte, bool) {
 	if rec, ok := memtable.GetRecord(key); ok {
 		return rec.Value, true
-	} else if rec, ok := sstable.FindInSstables(key, *blockManager, compressionDict); ok {
+	} else if rec, ok, _, _ := sstable.FindInSstables(key, *blockManager, compressionDict); ok {
 		return rec.Value, true
 	}
 	return nil, false
@@ -147,7 +148,7 @@ func main() {
 	if record, found := memtable.GetRecord(tokenBucketKey); found {
 		existingSerialized = []byte(record.Value)
 		existingFound = true
-	} else if record, found := sstable.FindInSstables(tokenBucketKey, *blockManager, compressionDictionary); found {
+	} else if record, found, _, _ := sstable.FindInSstables(tokenBucketKey, *blockManager, compressionDictionary); found {
 		existingSerialized = []byte(record.Value)
 		existingFound = true
 	}
@@ -198,8 +199,8 @@ func main() {
 		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 	}
 
-	amountOfKeys := 200
-	counter := 0
+	amountOfKeys := 100
+	counter := amountOfKeys + 1
 	min := 1
 	max := amountOfKeys
 
@@ -214,21 +215,37 @@ func main() {
 	foundIn := []string{}
 
 	deleteStep := 3
+	addStep := 6
+	updateStep := 3
 	for {
 		//////////////////////
 		////////TEST//////////
 		//////////////////////
-		if counter < max && testPhase == 0 { //unos kljuceva
-			counter++
+		if counter > min && testPhase == 0 { //unos kljuceva
+			counter--
 			key = "key" + strconv.Itoa(counter)
 			value = "value" + strconv.Itoa(counter)
 		} else if counter < max && testPhase == 1 { //provera unetih kljuceva
 			counter++
 			key = "key" + strconv.Itoa(counter)
-		} else if counter < max-deleteStep && testPhase == 2 { //brisanje svakog n-tog ključa
+		} else if counter <= max-deleteStep && testPhase == 2 { //brisanje svakog n-tog ključa
 			counter += deleteStep
 			key = "key" + strconv.Itoa(counter)
 		} else if counter < max && testPhase == 3 { //provera da li su obrisani ključevi
+			counter++
+			key = "key" + strconv.Itoa(counter)
+		} else if counter <= max-updateStep && testPhase == 4 { //ažuriranje svakog n-tog ključa
+			counter += updateStep
+			key = "key" + strconv.Itoa(counter)
+			value = "value" + strconv.Itoa(counter) + "u"
+		} else if counter < max && testPhase == 5 { //provera da li su ažurirani ključevi
+			counter++
+			key = "key" + strconv.Itoa(counter)
+		} else if counter <= max-addStep && testPhase == 6 { //dodaju se vrednosti koje su bile obrisane
+			counter += addStep
+			key = "key" + strconv.Itoa(counter)
+			value = "value" + strconv.Itoa(counter)
+		} else if counter < max && testPhase == 7 { //provera da li su dodate vrednosti
 			counter++
 			key = "key" + strconv.Itoa(counter)
 		} else {
@@ -238,7 +255,7 @@ func main() {
 				for i := min; i <= max; i++ {
 					expectedValues = append(expectedValues, "value"+strconv.Itoa(i))
 				}
-				counter = min - 1
+				counter--
 			case 1:
 				operacija = "DELETE"
 				for i := min; i <= max; i++ {
@@ -248,7 +265,6 @@ func main() {
 					}
 				}
 				returnedValues = []string{}
-				expectedValues = []string{}
 				foundIn = []string{}
 
 				counter = min - deleteStep
@@ -257,10 +273,8 @@ func main() {
 				nextDeleted := min
 				for i := min; i <= max; i++ {
 					if i == nextDeleted {
-						expectedValues = append(expectedValues, "X")
+						expectedValues[i-1] = "X"
 						nextDeleted += deleteStep
-					} else {
-						expectedValues = append(expectedValues, "value"+strconv.Itoa(i))
 					}
 				}
 
@@ -274,47 +288,95 @@ func main() {
 					}
 				}
 				returnedValues = []string{}
-				expectedValues = []string{}
 				foundIn = []string{}
+
+				counter = min - updateStep + 1
+			case 4:
+				operacija = "GET"
+				nextUpdated := min + 1
+				for i := min; i <= max; i++ {
+					if i == nextUpdated {
+						expectedValues[i-1] = "value" + strconv.Itoa(i) + "u"
+						nextUpdated += updateStep
+					}
+				}
+
+				counter = min - 1
+			case 5:
+				operacija = "PUT"
+				for i := min; i <= max; i++ {
+					if expectedValues[i-1] != returnedValues[i-1] {
+						fmt.Printf("Greska u testu: ocekivano '%s', a vraceno '%s'\n", expectedValues[i-1], returnedValues[i-1])
+						return
+					}
+				}
+				returnedValues = []string{}
+				foundIn = []string{}
+
+				counter = min - addStep
+			case 6:
+				operacija = "GET"
+				nextAdded := min
+				for i := min; i <= max; i++ {
+					if i == nextAdded {
+						expectedValues[i-1] = "value" + strconv.Itoa(i)
+						nextAdded += addStep
+					}
+				}
+
+				counter = min - 1
+			case 7:
+				operacija = "SCAN"
+				for i := min; i <= max; i++ {
+					if expectedValues[i-1] != returnedValues[i-1] {
+						fmt.Printf("Greska u testu: ocekivano '%s', a vraceno '%s'\n", expectedValues[i-1], returnedValues[i-1])
+						return
+					}
+				}
+
+				returnedValues = []string{}
+				foundIn = []string{}
+
+				counter = min - 1
 			default:
 				fmt.Println("Test završen uspešno!")
 
-				// entries, err := os.ReadDir("data/sstable")
-				// if err != nil {
-				// 	fmt.Printf("Greška pri ciscenju fajlova: %v\n", err)
-				// 	return
-				// }
-				// for _, entry := range entries {
-				// 	if entry.IsDir() {
-				// 		subfolderPath := filepath.Join("data/sstable", entry.Name())
-				// 		err := os.RemoveAll(subfolderPath)
-				// 		if err != nil {
-				// 			fmt.Printf("Greška pri brisanju %s: %v\n", subfolderPath, err)
-				// 			return
-				// 		}
-				// 	}
-				// }
+				entries, err := os.ReadDir("data/sstable")
+				if err != nil {
+					fmt.Printf("Greška pri ciscenju fajlova: %v\n", err)
+					return
+				}
+				for _, entry := range entries {
+					if entry.IsDir() {
+						subfolderPath := filepath.Join("data/sstable", entry.Name())
+						err := os.RemoveAll(subfolderPath)
+						if err != nil {
+							fmt.Printf("Greška pri brisanju %s: %v\n", subfolderPath, err)
+							return
+						}
+					}
+				}
 
-				// file, err := os.OpenFile("data/sstable/master-toc.txt", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
-				// if err != nil {
-				// 	fmt.Printf("Greška pri otvaranju master-toc fajla: %v\n", err)
-				// 	return
-				// }
-				// defer file.Close()
+				file, err := os.OpenFile("data/sstable/master-toc.txt", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
+				if err != nil {
+					fmt.Printf("Greška pri otvaranju master-toc fajla: %v\n", err)
+					return
+				}
+				defer file.Close()
 
-				// entries, err = os.ReadDir("BlockManager/wal")
-				// if err != nil {
-				// 	fmt.Printf("Greška pri ciscenju fajlova: %v\n", err)
-				// 	return
-				// }
-				// for _, entry := range entries {
-				// 	walSegment := filepath.Join("BlockManager/wal", entry.Name())
-				// 	err := os.RemoveAll(walSegment)
-				// 	if err != nil {
-				// 		fmt.Printf("Greška pri brisanju %s: %v\n", walSegment, err)
-				// 		return
-				// 	}
-				// }
+				entries, err = os.ReadDir("BlockManager/wal")
+				if err != nil {
+					fmt.Printf("Greška pri ciscenju fajlova: %v\n", err)
+					return
+				}
+				for _, entry := range entries {
+					walSegment := filepath.Join("BlockManager/wal", entry.Name())
+					err := os.RemoveAll(walSegment)
+					if err != nil {
+						fmt.Printf("Greška pri brisanju %s: %v\n", walSegment, err)
+						return
+					}
+				}
 
 				return
 			}
@@ -355,16 +417,20 @@ func main() {
 			if testPhase == 3 {
 				fmt.Println("Traženje u SSTable-ima...")
 			}
-			SSrecord, keyFound := sstable.FindInSstables(key, *blockManager, compressionDictionary)
+			SSrecord, keyFound, deleted, name := sstable.FindInSstables(key, *blockManager, compressionDictionary)
 			if keyFound {
 				returnedValues = append(returnedValues, string(SSrecord.Value))
-				foundIn = append(foundIn, "sstable")
+				foundIn = append(foundIn, "sstable ("+name+")")
 				cache.PutInCache(key, SSrecord.Value)
 				continue
 			}
 
 			returnedValues = append(returnedValues, "X")
-			foundIn = append(foundIn, "none")
+			if deleted {
+				foundIn = append(foundIn, "sstable ("+name+")")
+			} else {
+				foundIn = append(foundIn, "none")
+			}
 		} else if operacija == "PUT" {
 
 			// if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
@@ -377,6 +443,9 @@ func main() {
 			// 	continue
 			// }
 
+			if testPhase == 6 {
+				fmt.Println("putovanje u SSTable...")
+			}
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, key, []byte(value), blockSize, false)
 			for _, record := range records {
 				blockManager.PutRecord(record)
@@ -411,6 +480,10 @@ func main() {
 			// }
 
 			//napraviti zapis sa tombstone = true
+
+			if testPhase == 2 {
+				fmt.Println("Brisanje u SSTable...")
+			}
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(true, key, []byte(""), blockSize, false)
 			for _, record := range records {
 				blockManager.PutRecord(record)
