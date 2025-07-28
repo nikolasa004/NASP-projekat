@@ -115,8 +115,8 @@ func (table *Memtable) PutRecord(tombstone bool, key string, value string, block
 	currTable := &table.tables[table.activeTable]
 	(*currTable).SetLinkedSegment(currSegment) // poslednji zapis u tabeli ce uvek biti skladisten u najnoviji segment
 
-	foundRecord, found := table.GetRecord(key)
-	if found { // ako postoji zapis dolazi do azuriranja
+	foundRecord, _ := table.GetRecord(key)
+	if foundRecord != nil { // ako postoji zapis dolazi do azuriranja
 		newTimeStamp := uint64(time.Now().UnixMicro())
 		foundRecord.SetTimestamp(newTimeStamp)
 		foundRecord.SetValue([]byte(value))
