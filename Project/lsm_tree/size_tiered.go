@@ -67,8 +67,6 @@ func (lsm *LSMTree) AddSstable(level int, summarySampleRate int, oneFile bool, b
 
 // Pretpostavimo: lsm.Levels[level] je lista SSTabela sa LEVELA na kojem radis kompakciju
 func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockManager *BlockManager.BlockManager, compression bool, dictionary *sstable.Dictionary) {
-	fmt.Printf("Kompaktujem nivo %d\n", level)
-
 	levelDir := fmt.Sprintf("data/sstable/L%d", level)
 	entries, err := os.ReadDir(levelDir)
 	if err != nil {
@@ -103,11 +101,9 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 			}
 
 			for _, rec := range records {
-				fmt.Printf("Da li je SSTabela kompresovana: %t\n", isCompressed)
 				// Ako je SSTabela kompresovana i postoji dictionary, dekompresuj ključ
 				if isCompressed && dictionary != nil {
 					rec.Key = dictionary.FindOriginalKey(rec.Key)
-					fmt.Printf("Dekomprimovan kljuc: %s\n", rec.Key)
 				}
 			}
 
@@ -118,10 +114,6 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 
 	}
 
-	if len(allRecords) == 0 {
-		fmt.Println("Nema sstabela za kompakciju na ovom nivou.")
-		return
-	}
 
 	// Prvo obriši stare SSTable foldere
 	for _, folder := range sstableFolders {
@@ -143,21 +135,14 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 	sort.Slice(mergedRecords, func(i, j int) bool {
 		return mergedRecords[i].Key < mergedRecords[j].Key
 	})
-	//for keyss, _ := range mergedRecords {
-	//	fmt.Printf("Procitan kljuc: %s\n", mergedRecords[keyss].Key)
-	//}
 
 	if compression && dictionary != nil {
 		for _, rec := range mergedRecords {
 			rec.Key = dictionary.Put(rec.Key)
-			fmt.Printf("Kompresovan kljuc: %s\n", rec.Key)
 
 		}
 	}
-	//fmt.Printf("Procitan kljuc: %s, vrednost: %s\n", mergedRecords[0].Key, mergedRecords[0].Value)
 
 	newSst := sstable.WriteSstable(mergedRecords, sampleRate, true, oneFile, blockManager, compression, level+1) //dodaj u sstable level
 	lsm.Levels[level+1] = append(lsm.Levels[level+1], newSst)
-
-	// Novi SSTable će sam sebe dodati u master TOC (u WriteSstable funkciji)
 }

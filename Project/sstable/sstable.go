@@ -890,16 +890,24 @@ func ReadAllRecords(sst *Sstable, blockManager *BlockManager.BlockManager) ([]*M
 	return memRecs, nil
 }
 
-// CompactSstables pravi merge više SSTabela i vraća jedan slice rezultata (bez duplikata, najnoviji zapis pobeđuje)
 func CompactSstables(allSstables [][]*Memtable.MemtableRecord) []*Memtable.MemtableRecord {
 	N := len(allSstables)
 	positions := make([]int, N)
 	result := []*Memtable.MemtableRecord{}
 
+	for i := range allSstables {
+		records := allSstables[i]
+		sort.Slice(records, func(i, j int) bool {
+			return records[i].Key < records[j].Key
+		})
+		allSstables[i] = records
+	}
 	for {
-		// Nađi najmanji ključ među aktivnim pokazivačima
+		// 1. Nađi minimalni ključ i sve indekse gde se on javlja
 		minKey := ""
 		first := true
+		minIdxs := []int{}
+
 		for i := range positions {
 			if positions[i] >= len(allSstables[i]) {
 				continue
@@ -908,40 +916,39 @@ func CompactSstables(allSstables [][]*Memtable.MemtableRecord) []*Memtable.Memta
 			if first || key < minKey {
 				minKey = key
 				first = false
+				minIdxs = []int{i} // Resetuj i stavi ovaj indeks
+			} else if key == minKey {
+				minIdxs = append(minIdxs, i)
 			}
 		}
 		if first {
 			break // Gotovi svi pokazivači
 		}
 
-		// Pronađi sve zapise sa tim ključem i upamti njihove timestampe
+		// 2. Od svih rekorda sa tim ključem pronađi onaj sa najvećim timestampom
 		var newest *Memtable.MemtableRecord
 		var newestIdx int
 		var timestamps []uint64
-		for i := range positions {
-			if positions[i] >= len(allSstables[i]) {
-				continue
-			}
-			rec := allSstables[i][positions[i]]
-			if rec.Key == minKey {
-				timestamps = append(timestamps, rec.Timestamp)
-				if newest == nil || rec.Timestamp > newest.Timestamp {
-					newest = rec
-					newestIdx = i
-				}
+		for _, idx := range minIdxs {
+			rec := allSstables[idx][positions[idx]]
+			timestamps = append(timestamps, rec.Timestamp)
+			if newest == nil || rec.Timestamp > newest.Timestamp {
+				newest = rec
+				newestIdx = idx
 			}
 		}
 
 		// Prikazi sve timestampove i koji se upisuje
 		if len(timestamps) > 1 {
 			fmt.Printf("Ključ '%s' ima timestampe: %v, upisuje se iz SSTable #%d sa timestampom %d\n", minKey, timestamps, newestIdx, newest.Timestamp)
-		} else if len(timestamps) == 1 {
-
 		}
 
-		// Upisi i tombstone i netombstone zapise da bi se očuvala semantika brisanja
 		if newest != nil {
 			result = append(result, newest)
+		}
+
+		for _, idx := range minIdxs {
+			positions[idx]++
 		}
 
 		// Pomeraj pokazivače napred za sve koje su bile na tom ključu
@@ -950,7 +957,6 @@ func CompactSstables(allSstables [][]*Memtable.MemtableRecord) []*Memtable.Memta
 				positions[i]++
 			}
 		}
-		//fmt.Println("min i max sstable", minKey, " ", maxKey)
 	}
 
 	return result
