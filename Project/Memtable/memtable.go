@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-//napravi enumeraciju za implementation type
+// napravi enumeraciju za implementation type
 const (
 	SkipListType = "SkipList"
 	HashmapType  = "Hashmap"
@@ -20,7 +20,7 @@ type Table interface {
 	AddRecord(record *MemtableRecord)
 	Iterator() <-chan *MemtableRecord
 	GetSortedRecords() []*MemtableRecord // vraca sve vrednosti u tabeli
-	GetState() string // stanja tabele - empty, full, active
+	GetState() string                    // stanja tabele - empty, full, active
 	SetState(state string)
 	GetLinkedSegment() int // oznaka poslednjeg segmenta wall-a u koji je upisan neki zapis koji je zabelezen u ovoj tabeli
 	SetLinkedSegment(segment int)
@@ -44,6 +44,10 @@ func (table *Memtable) GetType() string {
 
 func (table *Memtable) GetActiveTable() int {
 	return table.activeTable
+}
+
+func (table *Memtable) GetTableSize() int {
+	return table.tableSize
 }
 
 func NewMemtable(implementType string, NumOfTables int, tableSize int) *Memtable {

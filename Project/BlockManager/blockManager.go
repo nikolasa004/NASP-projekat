@@ -833,9 +833,9 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 		result = append(result, full)
 	}
 
-	if len(result) == 0 {
-		return nil, blockKeys, blocks, fmt.Errorf("no records found starting at offset %d", startOffset)
-	}
+	// if len(result) == 0 {
+	// 	return nil, blockKeys, blocks, fmt.Errorf("no records found starting at offset %d", startOffset)
+	// }
 	return result, blockKeys, blocks, nil
 }
 
