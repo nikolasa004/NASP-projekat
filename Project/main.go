@@ -199,7 +199,7 @@ func main() {
 		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 	}
 
-	amountOfKeys := 100
+	amountOfKeys := 103
 	counter := amountOfKeys + 1
 	min := 1
 	max := amountOfKeys

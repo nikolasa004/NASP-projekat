@@ -140,6 +140,13 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 	// Merge-uj sve podatke
 	mergedRecords := sstable.CompactSstables(allRecords)
 
+	var flatRecords []*Memtable.MemtableRecord
+	for _, slice := range allRecords {
+		flatRecords = append(flatRecords, slice...)
+	}
+
+	fmt.Printf("Broj rekorda posle kompakcije: %d, a broj rekorda pre kompakcije:%d\n", len(mergedRecords), len(flatRecords))
+
 	sort.Slice(mergedRecords, func(i, j int) bool {
 		return mergedRecords[i].Key < mergedRecords[j].Key
 	})
@@ -155,6 +162,9 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 		}
 	}
 	//fmt.Printf("Procitan kljuc: %s, vrednost: %s\n", mergedRecords[0].Key, mergedRecords[0].Value)
+	for _, rec := range mergedRecords {
+		fmt.Printf("Key: %s, Value: %s, Timestamp%d, Tombstone%t\n", rec.Key, string(rec.Value), rec.Timestamp, rec.Tombstone)
+	}
 
 	newSst := sstable.WriteSstable(mergedRecords, sampleRate, true, oneFile, blockManager, compression, level+1) //dodaj u sstable level
 	lsm.Levels[level+1] = append(lsm.Levels[level+1], newSst)
