@@ -62,7 +62,7 @@ func DeserializeRateLimit(data []byte) (*RateLimitState, error) {
 
 // kad prodje interval vrati sve tokene u bucket, skini jedan token, ako ima
 func (r *RateLimitState) CanConsumeToken() bool {
-	now := time.Now().Unix()
+	now := time.Now().UnixMicro()
 	elapsed := now - r.StartTime
 
 	if elapsed >= r.Interval {

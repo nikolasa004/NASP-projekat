@@ -133,7 +133,7 @@ func main() {
 	const tokenBucketKey = "__rateLimit__"
 
 	rateLimitState := &RateLimit.RateLimitState{
-		StartTime: time.Now().Unix(),
+		StartTime: time.Now().UnixMicro(),
 		Count:     config.RateLimiter.Capacity,
 		Capacity:  config.RateLimiter.Capacity,
 		Interval:  config.RateLimiter.Interval,

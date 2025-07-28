@@ -113,7 +113,7 @@ func (table *Memtable) PutRecord(tombstone bool, key string, value string, block
 
 	foundRecord, found := table.GetRecord(key)
 	if found { // ako postoji zapis dolazi do azuriranja
-		newTimeStamp := uint64(time.Now().Unix())
+		newTimeStamp := uint64(time.Now().UnixMicro())
 		foundRecord.SetTimestamp(newTimeStamp)
 		foundRecord.SetValue([]byte(value))
 		foundRecord.SetTombstone(tombstone)
@@ -164,7 +164,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 }
 
 func (table *Memtable) createRecord(tombstone bool, kljuc string, vrednost []byte) *MemtableRecord {
-	timeStamp := uint64(time.Now().Unix())
+	timeStamp := uint64(time.Now().UnixMicro())
 	return NewMemtableRecord(kljuc, vrednost, timeStamp, tombstone)
 }
 
