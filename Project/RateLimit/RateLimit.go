@@ -109,7 +109,7 @@ func CheckRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, blockMan
 		return false
 	}
 
-	sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
+	sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false, 0)
 	for _, r := range sysRecords {
 		blockManager.PutRecord(r)
 	}

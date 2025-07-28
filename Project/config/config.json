@@ -20,7 +20,7 @@
   "LSMTree": {
     "maxLevels": 5,
     "maxFilesPerLevel": 3,
-    "tieredCompaction": true,
+    "tieredCompaction": false,
     "multiplyer": 3
   },
   "RateLimiter": {

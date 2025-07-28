@@ -57,7 +57,7 @@ func CRC32(data []byte) uint32 { //funkcija koja racuna CRC32 vrednost za zadati
 	return crc32.ChecksumIEEE(data)
 }
 
-func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []byte, blockSize int, forSstable bool) [][]byte { //funkcija koja kreira zapise sa fragmentacijom
+func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []byte, blockSize int, forSstable bool, oldTimestamp uint64) [][]byte { //funkcija koja kreira zapise sa fragmentacijom
 	binaryRecords := [][]byte{}
 
 	keySize := uint64(len(key))
@@ -66,7 +66,12 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 	//moramo da izracunamo velicinu svakog dela zapisa da bismo mogli primetiti fragmentaciju
 	typeSize := 1
 
-	timeStamp := time.Now().UnixMicro()
+	var timeStamp uint64
+	if forSstable {
+		timeStamp = oldTimestamp
+	} else {
+		timeStamp = uint64(time.Now().UnixMicro())
+	}
 	timeStampBytes := make([]byte, binary.MaxVarintLen64)
 	timeStampSize := binary.PutUvarint(timeStampBytes, uint64(timeStamp))
 
@@ -96,7 +101,12 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 	constMaxSize := uint64(blockSize) - uint64(crcSize) - uint64(sizeSize) - uint64(typeSize) - uint64(timeStampSize) - uint64(tombstoneSize) - uint64(keySizeSize) - uint64(valueSizeSize)
 
 	if keySize+valueSize <= constMaxSize {
-		walRecord := CreateWalRecord(tombstone, key, value, 0)
+		var walRecord WalRecord
+		if forSstable {
+			walRecord = CreateWalRecord(tombstone, key, value, 0, timeStamp)
+		} else {
+			walRecord = CreateWalRecord(tombstone, key, value, 0, 0) //za memtable i wal ne treba stari timestamp
+		}
 		binaryRecord := walRecord.CreateBinaryRecord(forSstable)
 		binaryRecords = append(binaryRecords, binaryRecord)
 	} else {
@@ -119,7 +129,12 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 				newValue := []byte{}
 
 				if firstFragmentation {
-					walRecord := CreateWalRecord(tombstone, newKey, newValue, numberOfFragmentation)
+					var walRecord WalRecord
+					if forSstable {
+						walRecord = CreateWalRecord(tombstone, newKey, newValue, numberOfFragmentation, timeStamp)
+					} else {
+						walRecord = CreateWalRecord(tombstone, newKey, newValue, numberOfFragmentation, 0) //za memtable i wal ne treba stari timestamp
+					}
 					binaryRecord = walRecord.CreateBinaryRecord(forSstable)
 				} else {
 					walRecord := CreateFragmentedWalRecord(newKey, newValue, numberOfFragmentation)
@@ -140,11 +155,21 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 				newKey := ""
 				newValue := value[:newValueSize]
 
+				var walRecord WalRecord
 				if firstFragmentation {
-					walRecord := CreateWalRecord(tombstone, newKey, newValue, numberOfFragmentation)
+					if forSstable {
+						walRecord = CreateWalRecord(tombstone, newKey, newValue, numberOfFragmentation, timeStamp)
+					} else {
+						walRecord = CreateWalRecord(tombstone, newKey, newValue, numberOfFragmentation, 0) //za memtable i wal ne treba stari timestamp
+					}
 					binaryRecord = walRecord.CreateBinaryRecord(forSstable)
 				} else {
-					walRecord := CreateFragmentedWalRecord(newKey, newValue, numberOfFragmentation)
+
+					if forSstable {
+						walRecord = CreateFragmentedWalRecord(newKey, newValue, numberOfFragmentation)
+					} else {
+						walRecord = CreateFragmentedWalRecord(newKey, newValue, numberOfFragmentation)
+					}
 					binaryRecord = walRecord.CreateFragmentedBinaryRecord(forSstable)
 				}
 				binaryRecords = append(binaryRecords, binaryRecord)
@@ -166,7 +191,7 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 	return binaryRecords
 }
 
-func CreateWalRecord(tombstone bool, key string, value []byte, fragment int) WalRecord { //funkcija koja kreira objekat WalRecord, tj. objekat za zapis u WAL-u
+func CreateWalRecord(tombstone bool, key string, value []byte, fragment int, oldTimeStamp uint64) WalRecord { //funkcija koja kreira objekat WalRecord, tj. objekat za zapis u WAL-u
 	keySize := uint64(len(key))
 	valueSize := uint64(len(value))
 
@@ -174,7 +199,13 @@ func CreateWalRecord(tombstone bool, key string, value []byte, fragment int) Wal
 	typeBytes := make([]byte, typeSize)
 	typeBytes[0] = byte(fragment)
 
-	timeStamp := time.Now().UnixMicro()
+	var timeStamp uint64
+	if oldTimeStamp == 0 {
+		timeStamp = uint64(time.Now().UnixMicro())
+	} else {
+		timeStamp = oldTimeStamp
+	}
+
 	timeStampBytes := make([]byte, binary.MaxVarintLen64)
 	timeStampSize := binary.PutUvarint(timeStampBytes, uint64(timeStamp))
 

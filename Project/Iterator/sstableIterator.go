@@ -183,6 +183,7 @@ func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string
 		for i := len(sstables) - 1; i >= 0; i-- {
 			toc := filepath.Join("data", "sstable", level, sstables[i], fmt.Sprintf("%s-TOC.txt", sstables[i]))
 			iter := NewSstableIterator(toc, bm, prefix, "", "", startingIndex, hasCompression, compressionDictionary)
+			print(sstables[i], " - ", startingIndex)
 			if iter == nil {
 				fmt.Println("Preskačem nevalidan SSTable:", toc)
 				continue

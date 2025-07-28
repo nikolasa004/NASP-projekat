@@ -65,7 +65,7 @@ func loadFromStorage(key string, memtable *Memtable.Memtable, blockManager *Bloc
 func writeToStorage(key string, value []byte, isTombstone bool, blockSize int, blockManager *BlockManager.BlockManager,
 	memtable *Memtable.Memtable, summarySampleRate int, oneFile, hasCompression bool) {
 
-	records := BlockManager.CreateBinaryRecordsWithFragmentation(isTombstone, key, value, blockSize, false)
+	records := BlockManager.CreateBinaryRecordsWithFragmentation(isTombstone, key, value, blockSize, false, 0)
 	for _, record := range records {
 		blockManager.PutRecord(record)
 	}
@@ -180,7 +180,7 @@ func main() {
 			fmt.Println("Greska pri serijalizaciji token bucketa:", err)
 			os.Exit(1)
 		}
-		sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
+		sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false, 0)
 		for _, r := range sysRecords {
 			blockManager.PutRecord(r)
 		}
@@ -200,7 +200,7 @@ func main() {
 		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 	}
 
-	amountOfKeys := 20
+	amountOfKeys := 100
 	counter := amountOfKeys + 1
 	min := 1
 	max := amountOfKeys
@@ -479,7 +479,7 @@ func main() {
 			if testPhase == 6 {
 				fmt.Println("putovanje u SSTable...")
 			}
-			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, key, []byte(value), blockSize, false)
+			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, key, []byte(value), blockSize, false, 0)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
@@ -517,7 +517,7 @@ func main() {
 			if testPhase == 2 {
 				fmt.Println("Brisanje u SSTable...")
 			}
-			records := BlockManager.CreateBinaryRecordsWithFragmentation(true, key, []byte(""), blockSize, false)
+			records := BlockManager.CreateBinaryRecordsWithFragmentation(true, key, []byte(""), blockSize, false, 0)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
