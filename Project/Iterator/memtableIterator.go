@@ -39,7 +39,7 @@ func NewMemtableIterator(memtableIndex int, currentIndex int, memtable *Memtable
 }
 
 func (m *MemtableIterator) Next() {
-	if m.currentRecordIndex == m.memtable.NumOfTables-1 {
+	if m.currentRecordIndex == m.memtable.GetTableSize()-1 {
 		m.isScanned = true
 		return
 	}

@@ -46,6 +46,10 @@ func (table *Memtable) GetActiveTable() int {
 	return table.activeTable
 }
 
+func (table *Memtable) GetTableSize() int {
+	return table.tableSize
+}
+
 func NewMemtable(implementType string, NumOfTables int, tableSize int) *Memtable {
 
 	memtable := &Memtable{

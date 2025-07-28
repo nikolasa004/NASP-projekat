@@ -200,7 +200,7 @@ func main() {
 		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 	}
 
-	amountOfKeys := 50
+	amountOfKeys := 20
 	counter := amountOfKeys + 1
 	min := 1
 	max := amountOfKeys
@@ -358,7 +358,9 @@ func main() {
 					}
 				}
 
-				sort.Strings(expectedValues)
+				sort.Slice(expectedValues, func(i, j int) bool {
+					return expectedValues[i] < expectedValues[j]
+				})
 
 				counter = min - 1
 			case 8:
@@ -549,6 +551,13 @@ func main() {
 				fmt.Println(err)
 			}
 		} else if operacija == "SCAN" {
+			for i := 0; i < 3; i++ {
+				table := memtable.GetTable(i)
+				rekordi := table.GetSortedRecords()
+				for _, rec := range rekordi {
+					fmt.Printf("Memtable %d: Ključ: %s", i, rec.Key)
+				}
+			}
 			returnedValues = Scanners.Scan(prefix, lowerBound, upperBound, memtable, blockManager, hasCompression, compressionDictionary, pageSize, scannerCacheSize)
 		} else if operacija == "/" {
 			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal

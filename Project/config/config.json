@@ -5,9 +5,9 @@
     "blockCacheSize": 10
   },
   "Memtable": {
-    "implementType": "BTree",
+    "implementType": "SkipList",
     "numOfTables": 3,
-    "tableSize": 5
+    "tableSize": 3
   },
   "SSTableManager": {
     "summarySampleRate": 2,
