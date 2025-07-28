@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"project/BlockManager"
 	"project/sstable"
+	"sort"
 	"strings"
 )
 
@@ -14,6 +15,7 @@ type SstableIterator struct {
 	filename       string
 	keyOffsetPairs []sstable.KeyOffsetPair
 	currentIndex   int
+	GlobalIndex    int
 	isScanned      bool
 	dataOffset     uint64
 	dataLength     uint64
@@ -142,6 +144,7 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 			filename:                    dataPath,
 			keyOffsetPairs:              filtered,
 			currentIndex:                startingIndex,
+			GlobalIndex:                 startingIndex,
 			isScanned:                   false,
 			dataOffset:                  meta.DataOffset,
 			dataLength:                  meta.DataLength,
@@ -160,6 +163,7 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 			filename:                    dataPath,
 			keyOffsetPairs:              filtered,
 			currentIndex:                startingIndex,
+			GlobalIndex:                 startingIndex,
 			isScanned:                   false,
 			dataOffset:                  0,
 			dataLength:                  uint64(dataLength),
@@ -175,15 +179,44 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 	}
 }
 
-func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string, startingIndex int, hasCompression bool, compressionDictionary *sstable.Dictionary) []InterfaceIterator {
+func GenerateIteratorsPrefixSstable(
+	bm *BlockManager.BlockManager,
+	prefix string,
+	startingIndex int,
+	hasCompression bool,
+	compressionDictionary *sstable.Dictionary,
+) []InterfaceIterator {
+
 	var iterators []InterfaceIterator
+	nextGlobalIndex := startingIndex
 
 	levels, _ := sstable.ReadMasterTOCIterators()
-	for level, sstables := range levels {
-		for i := len(sstables) - 1; i >= 0; i-- {
-			toc := filepath.Join("data", "sstable", level, sstables[i], fmt.Sprintf("%s-TOC.txt", sstables[i]))
-			iter := NewSstableIterator(toc, bm, prefix, "", "", startingIndex, hasCompression, compressionDictionary)
-			print(sstables[i], " - ", startingIndex)
+
+	// Sortiraj nazive nivoa kao L0, L1, L2...
+	levelNames := make([]string, 0, len(levels))
+	for level := range levels {
+		levelNames = append(levelNames, level)
+	}
+	sort.Strings(levelNames) // Rastući redosled: L0, L1, L2
+
+	for i := 0; i <= len(levelNames)-1; i++ {
+		level := levelNames[i]
+		sstables := levels[level]
+
+		for j := len(sstables) - 1; j >= 0; j-- { // najnoviji SSTable iz tog nivoa prvi
+			toc := filepath.Join("data", "sstable", level, sstables[j], fmt.Sprintf("%s-TOC.txt", sstables[j]))
+
+			iter := NewSstableIterator(
+				toc,
+				bm,
+				prefix,
+				"",
+				"",
+				nextGlobalIndex,
+				hasCompression,
+				compressionDictionary,
+			)
+
 			if iter == nil {
 				fmt.Println("Preskačem nevalidan SSTable:", toc)
 				continue
@@ -191,29 +224,64 @@ func GenerateIteratorsPrefixSstable(bm *BlockManager.BlockManager, prefix string
 
 			if len(iter.keyOffsetPairs) > 0 {
 				iterators = append(iterators, iter)
+				nextGlobalIndex++
 			}
 		}
 	}
+
 	return iterators
 }
 
-func GenerateIteratorsRangeSstable(bm *BlockManager.BlockManager, lower, upper string, startingIndex int, hasCompression bool, compressionDictionary *sstable.Dictionary) []InterfaceIterator {
+func GenerateIteratorsRangeSstable(
+	bm *BlockManager.BlockManager,
+	lower, upper string,
+	startingIndex int,
+	hasCompression bool,
+	compressionDictionary *sstable.Dictionary,
+) []InterfaceIterator {
+
 	var iterators []InterfaceIterator
+	nextGlobalIndex := startingIndex
 
 	levels, _ := sstable.ReadMasterTOCIterators()
-	for level, sstables := range levels {
-		for i := len(sstables) - 1; i >= 0; i-- {
-			toc := filepath.Join("data", "sstable", level, sstables[i], fmt.Sprintf("%s-TOC.txt", sstables[i]))
-			iter := NewSstableIterator(toc, bm, "", lower, upper, startingIndex, hasCompression, compressionDictionary)
+
+	// Sortiraj nazive nivoa kao L0, L1, L2...
+	levelNames := make([]string, 0, len(levels))
+	for level := range levels {
+		levelNames = append(levelNames, level)
+	}
+	sort.Strings(levelNames) // Rastući redosled: L0, L1, L2
+
+	for i := 0; i <= len(levelNames)-1; i++ {
+		level := levelNames[i]
+		sstables := levels[level]
+
+		for j := len(sstables) - 1; j >= 0; j-- { // najnoviji SSTable prvi
+			toc := filepath.Join("data", "sstable", level, sstables[j], fmt.Sprintf("%s-TOC.txt", sstables[j]))
+
+			iter := NewSstableIterator(
+				toc,
+				bm,
+				"",
+				lower,
+				upper,
+				nextGlobalIndex,
+				hasCompression,
+				compressionDictionary,
+			)
+
 			if iter == nil {
 				fmt.Println("Preskačem nevalidan SSTable:", toc)
 				continue
 			}
+
 			if len(iter.keyOffsetPairs) > 0 {
 				iterators = append(iterators, iter)
+				nextGlobalIndex++
 			}
 		}
 	}
+
 	return iterators
 }
 
@@ -250,6 +318,7 @@ func (it *SstableIterator) GetValue() *ScanRecord {
 				it.Next()
 				continue
 			}
+
 			return NewScanRecord(originalKey, record.Value, record.Tombstone)
 		}
 		it.Next()
@@ -273,4 +342,8 @@ func (it *SstableIterator) FinishPage() {
 func (s *SstableIterator) AlreadyRead(targetPage int) bool {
 	_, exists := s.pagesMap[targetPage]
 	return exists
+}
+
+func (it *SstableIterator) Name() string {
+	return filepath.Base(it.filename)
 }
