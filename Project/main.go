@@ -63,7 +63,7 @@ func loadFromStorage(key string, memtable *Memtable.Memtable, blockManager *Bloc
 func writeToStorage(key string, value []byte, isTombstone bool, blockSize int, blockManager *BlockManager.BlockManager,
 	memtable *Memtable.Memtable, summarySampleRate int, oneFile, hasCompression bool) {
 
-	records := BlockManager.CreateBinaryRecordsWithFragmentation(isTombstone, key, value, blockSize, false)
+	records := BlockManager.CreateBinaryRecordsWithFragmentation(isTombstone, key, value, blockSize, false, 0)
 	for _, record := range records {
 		blockManager.PutRecord(record)
 	}
@@ -178,7 +178,7 @@ func main() {
 			fmt.Println("Greska pri serijalizaciji token bucketa:", err)
 			os.Exit(1)
 		}
-		sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false)
+		sysRecords := BlockManager.CreateBinaryRecordsWithFragmentation(false, tokenBucketKey, serialized, blockSize, false, 0)
 		for _, r := range sysRecords {
 			blockManager.PutRecord(r)
 		}
@@ -290,7 +290,7 @@ func main() {
 			//	}
 			//	vrednost := string(file)
 
-			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize, false)
+			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize, false, 0)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}
@@ -324,7 +324,7 @@ func main() {
 			}
 
 			//napraviti zapis sa tombstone = true
-			records := BlockManager.CreateBinaryRecordsWithFragmentation(true, kljuc, []byte(""), blockSize, false)
+			records := BlockManager.CreateBinaryRecordsWithFragmentation(true, kljuc, []byte(""), blockSize, false, 0)
 			for _, record := range records {
 				blockManager.PutRecord(record)
 			}

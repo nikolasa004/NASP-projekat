@@ -127,7 +127,7 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	sstableRecords := make(map[string][][]byte)
 
 	for _, record := range data {
-		fragments := BlockManager.CreateBinaryRecordsWithFragmentation(record.Tombstone, record.Key, record.Value, blockSize, true)
+		fragments := BlockManager.CreateBinaryRecordsWithFragmentation(record.Tombstone, record.Key, record.Value, blockSize, true, record.Timestamp)
 		sstableRecords[record.Key] = fragments
 	}
 	keys, offsets, _ := blockManager.PutSstableRecords(sstableRecords, tableId, sstable.DataFilename, true)
@@ -222,7 +222,7 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 	sstableRecords := make(map[string][][]byte)
 
 	for _, record := range data {
-		fragments := BlockManager.CreateBinaryRecordsWithFragmentation(record.Tombstone, record.Key, record.Value, blockSize, true)
+		fragments := BlockManager.CreateBinaryRecordsWithFragmentation(record.Tombstone, record.Key, record.Value, blockSize, true, record.Timestamp)
 		sstableRecords[record.Key] = fragments
 	}
 
