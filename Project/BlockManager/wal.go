@@ -66,7 +66,7 @@ func CreateBinaryRecordsWithFragmentation(tombstone bool, key string, value []by
 	//moramo da izracunamo velicinu svakog dela zapisa da bismo mogli primetiti fragmentaciju
 	typeSize := 1
 
-	timeStamp := time.Now().Unix()
+	timeStamp := time.Now().UnixMicro()
 	timeStampBytes := make([]byte, binary.MaxVarintLen64)
 	timeStampSize := binary.PutUvarint(timeStampBytes, uint64(timeStamp))
 
@@ -174,7 +174,7 @@ func CreateWalRecord(tombstone bool, key string, value []byte, fragment int) Wal
 	typeBytes := make([]byte, typeSize)
 	typeBytes[0] = byte(fragment)
 
-	timeStamp := time.Now().Unix()
+	timeStamp := time.Now().UnixMicro()
 	timeStampBytes := make([]byte, binary.MaxVarintLen64)
 	timeStampSize := binary.PutUvarint(timeStampBytes, uint64(timeStamp))
 

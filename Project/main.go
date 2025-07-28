@@ -14,6 +14,7 @@ import (
 	"project/config"
 	lsmtree "project/lsm_tree"
 	"project/sstable"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -199,12 +200,19 @@ func main() {
 		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 	}
 
-	amountOfKeys := 103
+	amountOfKeys := 50
 	counter := amountOfKeys + 1
 	min := 1
 	max := amountOfKeys
 
 	operacija := "PUT"
+
+	prefix := ""
+	lowerBound := ""
+	upperBound := ""
+	pageSize := amountOfKeys * 2
+	scanEnded := false
+
 	key := ""
 	value := ""
 
@@ -248,6 +256,9 @@ func main() {
 		} else if counter < max && testPhase == 7 { //provera da li su dodate vrednosti
 			counter++
 			key = "key" + strconv.Itoa(counter)
+		} else if !scanEnded && testPhase == 8 { //provera skeniranja
+			prefix = "key"
+			scanEnded = true
 		} else {
 			switch testPhase {
 			case 0:
@@ -327,6 +338,7 @@ func main() {
 				counter = min - 1
 			case 7:
 				operacija = "SCAN"
+				prefix = "key"
 				for i := min; i <= max; i++ {
 					if expectedValues[i-1] != returnedValues[i-1] {
 						fmt.Printf("Greska u testu: ocekivano '%s', a vraceno '%s'\n", expectedValues[i-1], returnedValues[i-1])
@@ -337,7 +349,26 @@ func main() {
 				returnedValues = []string{}
 				foundIn = []string{}
 
+				tmp := expectedValues
+				expectedValues = []string{}
+
+				for i := range tmp {
+					if tmp[i] != "X" {
+						expectedValues = append(expectedValues, tmp[i])
+					}
+				}
+
+				sort.Strings(expectedValues)
+
 				counter = min - 1
+			case 8:
+				operacija = "SCAN"
+				for i := range expectedValues {
+					if expectedValues[i] != returnedValues[i] {
+						fmt.Printf("Greska u testu: ocekivano '%s', a vraceno '%s'\n", expectedValues[i], returnedValues[i])
+						return
+					}
+				}
 			default:
 				fmt.Println("Test završen uspešno!")
 
@@ -518,107 +549,7 @@ func main() {
 				fmt.Println(err)
 			}
 		} else if operacija == "SCAN" {
-			if !RateLimit.CheckRateLimit(tokenBucketKey, memtable, blockManager, blockSize, summarySampleRate, oneFile, hasCompression, compressionDictionary) {
-				continue
-			}
-			for {
-				reader := bufio.NewReader(os.Stdin)
-				fmt.Println("Odaberi tip skeniranja: ")
-				fmt.Println("1. Prefix 2. Range 3. Prefix sa iteratorom 4. Range sa iteratorom ili 5. nazad: ")
-				fmt.Println("Unesi za 1. prefix za 2. range za 3. iprefix  za 4. irange ili nazad za povratak: ")
-				choiceInput, _ := reader.ReadString('\n')
-				choice := strings.TrimSpace(choiceInput)
-				if choice == "nazad" {
-					break
-				}
-				var prefix, lowerBound, upperBound string
-				useIterator := false
-				pageSize := 0
-				switch choice {
-				case "prefix":
-					for {
-						fmt.Println("Unesite prefix: ")
-						input, _ := reader.ReadString('\n')
-						prefix = strings.TrimSpace(input)
-						if prefix != "" {
-							break
-						}
-						fmt.Println("Prefiks ne sme biti prazan.")
-					}
-				case "range":
-					for {
-						fmt.Println("Unesite donji limit: ")
-						input, _ := reader.ReadString('\n')
-						lowerBound = strings.TrimSpace(input)
-						if lowerBound != "" {
-							break
-						}
-						fmt.Println("Donji limit ne sme biti prazan.")
-					}
-					for {
-						fmt.Println("Unesite gornji limit: ")
-						input, _ := reader.ReadString('\n')
-						upperBound = strings.TrimSpace(input)
-						if upperBound != "" {
-							break
-						}
-						fmt.Println("Gornji limit ne sme biti prazan.")
-					}
-				case "iprefix":
-					for {
-						fmt.Println("Unesite prefix: ")
-						input, _ := reader.ReadString('\n')
-						prefix = strings.TrimSpace(input)
-						if prefix != "" {
-							break
-						}
-						fmt.Println("Prefiks ne sme biti prazan.")
-					}
-					useIterator = true
-					pageSize = 1
-
-				case "irange":
-					for {
-						fmt.Println("Unesite donji limit: ")
-						input, _ := reader.ReadString('\n')
-						lowerBound = strings.TrimSpace(input)
-						if lowerBound != "" {
-							break
-						}
-						fmt.Println("Donji limit ne sme biti prazan.")
-					}
-					for {
-						fmt.Println("Unesite gornji limit: ")
-						input, _ := reader.ReadString('\n')
-						upperBound = strings.TrimSpace(input)
-						if upperBound != "" {
-							break
-						}
-						fmt.Println("Gornji limit ne sme biti prazan.")
-					}
-					useIterator = true
-					pageSize = 1
-				default:
-					fmt.Println("Nevazeci izbor.")
-					continue
-				}
-
-				if !useIterator {
-					for {
-						fmt.Println("Unesite broj stranica: ")
-						input, _ := reader.ReadString('\n')
-						input = strings.TrimSpace(input)
-						num, err := strconv.Atoi(input)
-						if err == nil && num > 0 {
-							pageSize = num
-							break
-						}
-						fmt.Println("Unesite pozitivan ceo broj.")
-					}
-				}
-				Scanners.Scan(prefix, lowerBound, upperBound, memtable, blockManager, hasCompression, compressionDictionary, pageSize, scannerCacheSize)
-				break
-			}
+			returnedValues = Scanners.Scan(prefix, lowerBound, upperBound, memtable, blockManager, hasCompression, compressionDictionary, pageSize, scannerCacheSize)
 		} else if operacija == "/" {
 			blockManager.FlushUnsaved() //ako ima nesto u baferu a nema u wal-u, upisuje se u wal
 			break

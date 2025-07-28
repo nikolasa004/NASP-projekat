@@ -1,15 +1,11 @@
 package Scanners
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 	"project/BlockManager"
 	"project/Iterator"
 	"project/Memtable"
 	"project/sstable"
-	"strconv"
-	"strings"
 )
 
 func Scan(
@@ -22,7 +18,8 @@ func Scan(
 	compressionDict *sstable.Dictionary,
 	pageSize int,
 	cacheSize int,
-) {
+) []string {
+	var results []string
 	var memIts []Iterator.InterfaceIterator
 	var ssIts []Iterator.InterfaceIterator
 
@@ -38,7 +35,6 @@ func Scan(
 
 	currentPage := 0
 	prevPage := 0
-	scanner := bufio.NewScanner(os.Stdin)
 
 	cache := NewLRUCache(cacheSize)
 	skipToInput := false
@@ -115,7 +111,7 @@ mainLoop:
 						fmt.Println("Nema zapisa na ovoj stranici.")
 						if firstIteratiron {
 							fmt.Println("Nema podataka!")
-							return
+							return nil
 						}
 						if currentPage > 0 {
 							currentPage = prevPage // vrati se na prethodnu validnu ako nisi vec na prvoj
@@ -139,127 +135,15 @@ mainLoop:
 
 					fmt.Printf("Stranica %d:\n", currentPage+1)
 					for _, rec := range pageOfIterators {
-						fmt.Printf("Key: %s, Value: %s\n", rec.Key, rec.Value)
+						results = append(results, string(rec.Value))
 					}
 				}
-
-				prevPage = currentPage
 			}
-			skipToInput = false
 		}
 		// Upit za sledecu komandu
-		fmt.Printf("Unesi 'n' (naredna), 'p' (prethodna), broj strane, ili 'q' za izlaz: ")
-		if !scanner.Scan() {
-			break
-		}
-		input := strings.TrimSpace(scanner.Text())
 
-		switch input {
-		case "q":
-			break mainLoop
-		case "n":
-			currentPage++
-		case "p":
-			if currentPage == 0 {
-				fmt.Println("Vec si na prvoj stranici.")
-				continue
-			}
-			currentPage--
-		default:
-			pageNum, err := strconv.Atoi(input)
-			if err != nil || pageNum <= 0 {
-				fmt.Println("Neispravan unos. Unesi validan broj strane.")
-				continue
-			}
-			desiredPage := pageNum - 1
-			if desiredPage < 0 {
-				fmt.Println("Broj strane mora biti pozitivan.")
-				continue
-			}
-
-			cachedPage, found := cache.Get(desiredPage)
-			if found {
-				fmt.Printf("Stranica %d:\n", desiredPage+1)
-				for _, rec := range cachedPage {
-					fmt.Printf("Key: %s, Value: %s\n", rec.Key, rec.Value)
-				}
-
-				prevPage = currentPage
-				currentPage = desiredPage
-				skipToInput = true
-				continue mainLoop
-			}
-
-			//ako je stranica manja od trenutne, vec je ucitana i mozemo odmah da odradimo change page u main loop
-			if desiredPage < currentPage {
-				prevPage = currentPage
-				currentPage = desiredPage
-				continue mainLoop
-			}
-
-			//pravimo stranice od trenutne do trazene
-			for page := currentPage + 1; page <= desiredPage; page++ {
-				for _, it := range allIts {
-					if changer, ok := it.(interface{ ChangePage(int) }); ok {
-						changer.ChangePage(page)
-					}
-				}
-				heads := make([]*Iterator.ScanRecord, len(allIts))
-				for i, it := range allIts {
-					heads[i] = it.GetValue()
-				}
-
-				count := 0
-				merged := make([]Iterator.ScanRecord, 0, pageSize)
-
-				for count < pageSize {
-					minKey := ""
-					minKeyIndices := []int{}
-					allNil := true
-
-					for i, rec := range heads {
-						if rec == nil {
-							continue
-						}
-						allNil = false
-						if len(minKeyIndices) == 0 || rec.Key < minKey {
-							minKey = rec.Key
-							minKeyIndices = []int{i}
-						} else if rec.Key == minKey {
-							minKeyIndices = append(minKeyIndices, i)
-						}
-					}
-
-					if allNil {
-						break
-					}
-
-					rep := heads[minKeyIndices[0]]
-					if !rep.Tombstone {
-						merged = append(merged, *rep)
-						count++
-					}
-
-					for _, idx := range minKeyIndices {
-						allIts[idx].Next()
-						heads[idx] = allIts[idx].GetValue()
-					}
-				}
-
-				for _, it := range allIts {
-					if f, ok := it.(interface{ FinishPage() }); ok {
-						f.FinishPage()
-					}
-				}
-
-				// Ako se pojavi prazna stranica ispisi
-				if len(merged) == 0 {
-					fmt.Println("Nema zapisa na stranici", desiredPage+1)
-					continue mainLoop
-				}
-			}
-			prevPage = currentPage
-			currentPage = desiredPage
-		}
+		break mainLoop
 	}
+
+	return results
 }

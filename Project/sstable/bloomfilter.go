@@ -99,7 +99,7 @@ func (h HashWithSeed) Hash(data []byte) uint64 {
 
 func CreateHashFunctions(k uint32) []HashWithSeed {
 	h := make([]HashWithSeed, k)
-	ts := uint32(time.Now().Unix())
+	ts := uint32(time.Now().UnixMicro())
 	for i := uint32(0); i < k; i++ {
 		seed := make([]byte, 4)
 		binary.BigEndian.PutUint32(seed, ts+i)

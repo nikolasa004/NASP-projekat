@@ -18,7 +18,7 @@ func (h HashWithSeed) Hash(data []byte) uint64 {
 
 func CreateHashFunctions(k uint) []HashWithSeed {
 	h := make([]HashWithSeed, k)
-	ts := uint(time.Now().Unix())
+	ts := uint(time.Now().UnixMicro())
 	for i := uint(0); i < k; i++ {
 		seed := make([]byte, 32)
 		binary.BigEndian.PutUint32(seed, uint32(ts+i))

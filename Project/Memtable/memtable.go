@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-//napravi enumeraciju za implementation type
+// napravi enumeraciju za implementation type
 const (
 	SkipListType = "SkipList"
 	HashmapType  = "Hashmap"
@@ -20,7 +20,7 @@ type Table interface {
 	AddRecord(record *MemtableRecord)
 	Iterator() <-chan *MemtableRecord
 	GetSortedRecords() []*MemtableRecord // vraca sve vrednosti u tabeli
-	GetState() string // stanja tabele - empty, full, active
+	GetState() string                    // stanja tabele - empty, full, active
 	SetState(state string)
 	GetLinkedSegment() int // oznaka poslednjeg segmenta wall-a u koji je upisan neki zapis koji je zabelezen u ovoj tabeli
 	SetLinkedSegment(segment int)
@@ -113,7 +113,7 @@ func (table *Memtable) PutRecord(tombstone bool, key string, value string, block
 
 	foundRecord, found := table.GetRecord(key)
 	if found { // ako postoji zapis dolazi do azuriranja
-		newTimeStamp := uint64(time.Now().Unix())
+		newTimeStamp := uint64(time.Now().UnixMicro())
 		foundRecord.SetTimestamp(newTimeStamp)
 		foundRecord.SetValue([]byte(value))
 		foundRecord.SetTombstone(tombstone)
@@ -164,7 +164,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 }
 
 func (table *Memtable) createRecord(tombstone bool, kljuc string, vrednost []byte) *MemtableRecord {
-	timeStamp := uint64(time.Now().Unix())
+	timeStamp := uint64(time.Now().UnixMicro())
 	return NewMemtableRecord(kljuc, vrednost, timeStamp, tombstone)
 }
 
