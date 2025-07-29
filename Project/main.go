@@ -200,10 +200,12 @@ func main() {
 		lsmtree.AddSstableLeveled(0, summarySampleRate, oneFile, blockManager, hasCompression, compressionDictionary, multiplyer)
 	}
 
-	amountOfKeys := 100
+	amountOfKeys := 500
 	counter := amountOfKeys + 1
 	min := 1
 	max := amountOfKeys
+
+	testingWal := false
 
 	operacija := "PUT"
 
@@ -212,6 +214,8 @@ func main() {
 	upperBound := ""
 	pageSize := amountOfKeys * 2
 	scanEnded := false
+
+	verifyEnded := false
 
 	key := ""
 	value := ""
@@ -229,11 +233,15 @@ func main() {
 		//////////////////////
 		////////TEST//////////
 		//////////////////////
-		if counter > min && testPhase == 0 { //unos kljuceva
+		if counter > min && testPhase == 0 && !existingFound { //unos kljuceva
 			counter--
 			key = "key" + strconv.Itoa(counter)
 			value = "value" + strconv.Itoa(counter)
-		} else if counter < max && testPhase == 1 { //provera unetih kljuceva
+		} else if counter > min && testPhase == 0 { //provera unetih ključeva
+			counter = -1
+			testingWal = false
+			continue
+		} else if counter < max && testPhase == 1 { //provera unetih ključeva
 			counter++
 			key = "key" + strconv.Itoa(counter)
 		} else if counter <= max-deleteStep && testPhase == 2 { //brisanje svakog n-tog ključa
@@ -259,14 +267,20 @@ func main() {
 		} else if !scanEnded && testPhase == 8 { //provera skeniranja
 			prefix = "key"
 			scanEnded = true
+		} else if !verifyEnded && testPhase == 9 { //verifikacija
+			verifyEnded = true
 		} else {
 			switch testPhase {
 			case 0:
-				operacija = "GET"
+				if !testingWal {
+					operacija = "GET"
+				} else {
+					operacija = "/"
+				}
 				for i := min; i <= max; i++ {
 					expectedValues = append(expectedValues, "value"+strconv.Itoa(i))
 				}
-				counter--
+				counter = min - 1
 			case 1:
 				operacija = "DELETE"
 				for i := min; i <= max; i++ {
@@ -364,12 +378,27 @@ func main() {
 
 				counter = min - 1
 			case 8:
-				operacija = "SCAN"
+				operacija = "VERIFY"
+				brejkuj := false
+				sort.Slice(returnedValues, func(i, j int) bool {
+					return returnedValues[i] < returnedValues[j]
+				})
 				for i := range expectedValues {
 					if expectedValues[i] != returnedValues[i] {
 						fmt.Printf("Greska u testu: ocekivano '%s', a vraceno '%s'\n", expectedValues[i], returnedValues[i])
-						return
+						brejkuj = true
 					}
+				}
+				if brejkuj {
+					return
+				}
+
+				returnedValues = []string{}
+			case 9:
+				operacija = "VERIFY"
+				if len(returnedValues) != 0 {
+					fmt.Println("Greska u testu: ocekivano da ne bude vraceno nista, a vraceno je:", returnedValues)
+					return
 				}
 			default:
 				fmt.Println("Test završen uspešno!")
@@ -542,13 +571,15 @@ func main() {
 				cache.UpdateCache(flushedRecords) // ažuriranje keša sa flushed zapisima
 			}
 		} else if operacija == "VERIFY" {
-			fmt.Println("Unesite ime SSTable TOC fajla: ")
-			scanner.Scan()
-			userInput := scanner.Text()
+			fileContents, _ := os.ReadFile("data/sstable/master-toc.txt")
+			sstableNames := strings.Split(string(fileContents), "\n")
+			sstableNames = sstableNames[:len(sstableNames)-1]
 
-			err := sstable.VerifySstableMerkle(userInput, blockManager)
-			if err != nil {
-				fmt.Println(err)
+			for _, name := range sstableNames {
+				err := sstable.VerifySstableMerkle(name, blockManager)
+				if err != nil {
+					returnedValues = append(returnedValues, fmt.Sprintf("Greška u verifikaciji SSTable %s: %v", name, err))
+				}
 			}
 		} else if operacija == "SCAN" {
 			for i := 0; i < 3; i++ {

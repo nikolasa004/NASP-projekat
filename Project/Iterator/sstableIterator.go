@@ -136,7 +136,7 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 
 	// Kreiranje mape stranica
 	pages := make(map[int]int)
-	pages[0] = startingIndex // početak prve stranice
+	pages[0] = int(indexStart) // početak prve stranice
 
 	if isSingleFile {
 		return &SstableIterator{
@@ -216,7 +216,7 @@ func GenerateIteratorsPrefixSstable(
 				hasCompression,
 				compressionDictionary,
 			)
-
+			fmt.Println(sstables[j], ":", nextGlobalIndex)
 			if iter == nil {
 				fmt.Println("Preskačem nevalidan SSTable:", toc)
 				continue
@@ -346,4 +346,12 @@ func (s *SstableIterator) AlreadyRead(targetPage int) bool {
 
 func (it *SstableIterator) Name() string {
 	return filepath.Base(it.filename)
+}
+
+func (it *SstableIterator) GetIndex() int {
+	return it.currentIndex
+}
+
+func (it *SstableIterator) SetIndex(index int) {
+	it.currentIndex = index
 }

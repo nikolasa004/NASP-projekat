@@ -7,7 +7,7 @@
   "Memtable": {
     "implementType": "SkipList",
     "numOfTables": 3,
-    "tableSize": 3
+    "tableSize": 10
   },
   "SSTableManager": {
     "summarySampleRate": 2,
@@ -20,7 +20,7 @@
   "LSMTree": {
     "maxLevels": 5,
     "maxFilesPerLevel": 3,
-    "tieredCompaction": false,
+    "tieredCompaction": true,
     "multiplyer": 3
   },
   "RateLimiter": {

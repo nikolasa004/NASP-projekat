@@ -831,7 +831,9 @@ func FindTOCPath(sstableName string) (string, error) {
 	for scanner.Scan() {
 		dir := strings.TrimSpace(scanner.Text())
 		if strings.Contains(dir, sstableName) { // Možeš i preciznije == ako želiš baš tačan match
-			return fmt.Sprintf("data/sstable/%s/%s-TOC.txt", dir, sstableName), nil
+			parts := strings.Split(dir, "/")
+			ssName := parts[1]
+			return fmt.Sprintf("data/sstable/%s/%s-TOC.txt", dir, ssName), nil
 		}
 	}
 	return "", fmt.Errorf("nema SSTable sa tim imenom: %s", sstableName)
