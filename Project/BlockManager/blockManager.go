@@ -523,7 +523,14 @@ func (blockManager *BlockManager) PutSstableRecords(
 	}
 	currentOffset := uint64(0)
 
-	for key, fragments := range fragmentsPerRecord {
+	sortedKeys := make([]string, 0, len(fragmentsPerRecord))
+	for key := range fragmentsPerRecord {
+		sortedKeys = append(sortedKeys, key)
+	}
+	sort.Strings(sortedKeys)
+
+	for _, key := range sortedKeys {
+		fragments := fragmentsPerRecord[key]
 		keyOffsetCaptured := false
 		for _, fragment := range fragments {
 			if len(fragment) > blockSize {
