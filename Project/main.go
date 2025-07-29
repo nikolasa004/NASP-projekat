@@ -189,7 +189,6 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
-	//pomocnik := 8
 
 	if lsmtree.TieredCompaction {
 		// Ako je size-tiered, dodajemo SSTable u LSM stablo
@@ -245,14 +244,6 @@ func main() {
 				continue
 			}
 
-			// fmt.Println("Unesite kljuc: ")
-			// scanner.Scan()
-			// kljuc := scanner.Text()
-			// fmt.Println("Unesite vrednost: ")
-			// scanner.Scan()
-			// vrednost := scanner.Text()
-			//pomocnik--
-			//kljuc := "key" + strconv.Itoa(pomocnik)
 			kljuc, ok := promptForCustomKey(scanner)
 			if !ok {
 				fmt.Println("Povratak u meni.")
@@ -261,34 +252,6 @@ func main() {
 			fmt.Println("Unesite vrednost: ")
 			scanner.Scan()
 			vrednost := scanner.Text()
-
-			//var filename string
-			//switch pomocnik {
-
-			//case 7:
-			//		filename = "primer.txt"
-			//case 6:
-			//	filename = "primer1.txt"
-			//case 5:
-			///	filename = "primer2.txt"
-			//case 4:
-			//	filename = "primer3.txt"
-			//case 3:
-			//	filename = "primer4.txt"
-			//case 2:
-			//	filename = "primer5.txt"
-			//case 1:
-			//		filename = "primer6.txt"
-			//	case 0:
-			//		continue
-			//	}
-
-			//file, err := os.ReadFile(filename)
-			//	if err != nil {
-			//	fmt.Println("Greska pri citanju fajla:", err)
-			//	continue
-			//	}
-			//	vrednost := string(file)
 
 			records := BlockManager.CreateBinaryRecordsWithFragmentation(false, kljuc, []byte(vrednost), blockSize, false, 0)
 			for _, record := range records {
