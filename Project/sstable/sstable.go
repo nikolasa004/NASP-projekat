@@ -119,7 +119,7 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	bytes, err := filter.Serialize()
 	blockManager.WriteBloomFilter(bytes, sstable.FilterFilename)
 	if err != nil {
-		log.Fatalf("Failed to write Bloom filter: %v", err)
+		log.Fatalf("[Error] Failed to write Bloom filter: %v", err)
 	}
 
 	// Kreiranje blokova i upis preko block manager-a
@@ -151,9 +151,9 @@ func NewSstable(data []*Memtable.MemtableRecord, sampleRate int, compaction bool
 	root := BuildTree(allData) // Pretpostavljam da imaš ovu funkciju iz merkle_tree.go
 	err = SaveMerkleTree(root, sstable.MerkleTreeFilename)
 	if err != nil {
-		log.Fatalf("Neuspešno čuvanje Merkle stabla: %v", err)
+		log.Fatalf("[Error] Failed to save Merkle tree: %v", err)
 	}
-	log.Printf("Merkle stablo uspešno sačuvano u %s\n", sstable.MerkleTreeFilename)
+	log.Printf("Merkle tree successfully saved to %s\n", sstable.MerkleTreeFilename)
 
 	UpdateMasterTOC(fmt.Sprintf("L%d/sstable-%04d", level, tableId))
 
@@ -214,7 +214,7 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 	currentOffset += uint64(blockManager.GetBlockSize())
 
 	if err != nil {
-		log.Fatalf("Failed to write Bloom filter: %v", err)
+		log.Fatalf("[Error] Failed to write Bloom filter: %v", err)
 	}
 
 	// Pravljenje fragmentisanih zapisa i upis preko block manager-a
@@ -257,9 +257,9 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 	root := BuildTree(allData) // iz merkle_tree.go
 	merkleJSON, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
-		log.Fatalf("Neuspešno serijalizovanje Merkle stabla: %v", err)
+		log.Fatalf("[Error] Failed to serialize Merkle tree: %v", err)
 	}
-	log.Printf("Merkle stablo uspešno serijalizovano, dužina: %d bajtova\n", len(merkleJSON))
+	log.Printf("Merkle tree successfully serialized, length: %d bytes\n", len(merkleJSON))
 
 	metadata.MerkleTreeOffset = currentOffset           // novo
 	metadata.MerkleTreeLength = uint64(len(merkleJSON)) // novo
@@ -267,13 +267,13 @@ func NewSstableOneFile(data []*Memtable.MemtableRecord, sampleRate int, compacti
 	// Upis Merkle stabla direktno u .bin fajl – novo
 	file, err := os.OpenFile(sstable.Filename, os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		log.Fatalf("Neuspešno otvaranje fajla za Merkle: %v", err)
+		log.Fatalf("[Error] Failed to open file for Merkle tree: %v", err)
 	}
 	defer file.Close()
 
 	_, err = file.Write(merkleJSON)
 	if err != nil {
-		log.Fatalf("Neuspešno pisanje Merkle stabla u fajl: %v", err)
+		log.Fatalf("[Error] Failed to write Merkle tree to file: %v", err)
 	}
 
 	err = WriteMetadata(sstable.Filename, metadata)
@@ -453,7 +453,7 @@ func createFiles(tableID int, oneFile bool, level int) (string, error) {
 
 	err := os.MkdirAll(tableDir, os.ModePerm) // Kreiraj folder ako ne postoji
 	if err != nil {
-		return "", fmt.Errorf("failed to create folder for SSTable: %v", err)
+		return "", fmt.Errorf("[Error] Failed to create folder for SSTable: %v", err)
 	}
 
 	fileNames := GenerateSstableFilenames("data/sstable", tableID, level)
@@ -466,7 +466,7 @@ func createFiles(tableID int, oneFile bool, level int) (string, error) {
 		for _, name := range fileNamesList {
 			file, err := os.Create(name)
 			if err != nil {
-				return "", fmt.Errorf("failed to create file %s: %v", name, err)
+				return "", fmt.Errorf("[Error] Failed to create file %s: %v", name, err)
 			}
 			file.Close()
 		}
@@ -476,7 +476,7 @@ func createFiles(tableID int, oneFile bool, level int) (string, error) {
 		filePath := fmt.Sprintf("data/sstable/L%d/sstable-%04d/sstable-%04d.bin", level, tableID, tableID)
 		file, err := os.Create(filePath)
 		if err != nil {
-			return "", fmt.Errorf("failed to create single file: %v", err)
+			return "", fmt.Errorf("[Error] Failed to create single file: %v", err)
 		}
 		file.Close()
 	}
@@ -582,7 +582,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 
 		info, err := os.Stat(summaryfile)
 		if err != nil {
-			log.Fatalf("Greska pri dohvatanju informacija o fajlu %s: %v", summaryfile, err)
+			log.Fatalf("[Error] Error getting info for file %s: %v", summaryfile, err)
 		}
 		length := uint64(info.Size())
 
@@ -599,7 +599,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 
 		info, err = os.Stat(indexfile)
 		if err != nil {
-			log.Fatalf("Greska pri dohvatanju informacija o fajlu %s: %v", indexfile, err)
+			log.Fatalf("[Error] Error getting info for file %s: %v", indexfile, err)
 		}
 		length = uint64(info.Size())
 
@@ -612,7 +612,7 @@ func FindInSstable(key string, filename string, blockManager BlockManager.BlockM
 
 		info, err = os.Stat(datafile)
 		if err != nil {
-			log.Fatalf("Greska pri dohvatanju informacija o fajlu %s: %v", datafile, err)
+			log.Fatalf("[Error] Error getting info for file %s: %v", datafile, err)
 		}
 		maxDataOffset := uint64(info.Size())
 
@@ -786,7 +786,7 @@ func ReadSSTable(filename string, bm *BlockManager.BlockManager) ([][]byte, erro
 	return allData, nil
 }
 func ReadSSTableMultiMode(tocFile string, bm *BlockManager.BlockManager) ([][]byte, error) {
-	fmt.Println("Čitam SSTable multi file:", tocFile)
+	fmt.Println("Reading TOC file:", tocFile)
 	toc, err := ReadTOCFile(tocFile)
 	if err != nil {
 		return nil, err
@@ -797,10 +797,8 @@ func ReadSSTableMultiMode(tocFile string, bm *BlockManager.BlockManager) ([][]by
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Veličina data fajla:", info.Size())
 
 	records, _, _, err := bm.ReadSstableRecordsFromBlocks(dataFile, 0, bm.GetBlockSize(), uint64(info.Size()))
-	fmt.Printf("ReadSstableRecordsFromBlocks: file=%s, offset=0, blocksize=%d, end=%d\n", dataFile, bm.GetBlockSize(), uint64(info.Size()))
 
 	if err != nil {
 		return nil, err
@@ -836,7 +834,7 @@ func FindTOCPath(sstableName string) (string, error) {
 			return fmt.Sprintf("data/sstable/%s/%s-TOC.txt", dir, ssName), nil
 		}
 	}
-	return "", fmt.Errorf("nema SSTable sa tim imenom: %s", sstableName)
+	return "", fmt.Errorf("[Error] No SSTable with that name: %s", sstableName)
 }
 
 func ReadAllRecords(sst *Sstable, blockManager *BlockManager.BlockManager) ([]*Memtable.MemtableRecord, error) {
@@ -942,7 +940,7 @@ func CompactSstables(allSstables [][]*Memtable.MemtableRecord) []*Memtable.Memta
 
 		// Prikazi sve timestampove i koji se upisuje
 		if len(timestamps) > 1 {
-			fmt.Printf("Ključ '%s' ima timestampe: %v, upisuje se iz SSTable #%d sa timestampom %d\n", minKey, timestamps, newestIdx, newest.Timestamp)
+			fmt.Printf("Key '%s' has timestamps: %v, writing from SSTable #%d with timestamp %d\n", minKey, timestamps, newestIdx, newest.Timestamp)
 		}
 
 		if newest != nil {
@@ -994,13 +992,13 @@ func RemoveSstablesFromMasterTOC(sstableNames []string) error {
 
 	in, err := os.Open(masterTocPath)
 	if err != nil {
-		return fmt.Errorf("failed to open master TOC file: %v", err)
+		return fmt.Errorf("[Error] Failed to open master TOC file: %v", err)
 	}
 	defer in.Close()
 
 	out, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("failed to create temp TOC file: %v", err)
+		return fmt.Errorf("[Error] Failed to create temp TOC file: %v", err)
 	}
 	defer out.Close()
 
@@ -1019,7 +1017,7 @@ func RemoveSstablesFromMasterTOC(sstableNames []string) error {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading master TOC file: %v", err)
+		return fmt.Errorf("[Error] Error reading master TOC file: %v", err)
 	}
 
 	out.Sync()
@@ -1027,7 +1025,7 @@ func RemoveSstablesFromMasterTOC(sstableNames []string) error {
 	in.Close()
 
 	if err := os.Rename(tmpPath, masterTocPath); err != nil {
-		return fmt.Errorf("failed to replace TOC file: %v", err)
+		return fmt.Errorf("[Error] Failed to replace TOC file: %v", err)
 	}
 
 	return nil
@@ -1042,7 +1040,7 @@ func GetMinMaxKey(sst *Sstable, blockManager *BlockManager.BlockManager, isCompr
 		return "", "", err
 	}
 	if len(records) == 0 {
-		return "", "", fmt.Errorf("nema zapisa u SSTabeli")
+		return "", "", fmt.Errorf("[Error] No records in SSTable")
 	}
 
 	var keys []string

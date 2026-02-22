@@ -39,7 +39,7 @@ func (lsm *LSMTree) AddSstable(level int, summarySampleRate int, oneFile bool, b
 		entries, err := os.ReadDir(levelDir)
 		if err != nil {
 			// Ako ne postoji folder, ništa za kompakciju
-			fmt.Printf("Nema foldera za nivo %d: %v\n", currLevel, err)
+			fmt.Printf("[Error] No directory for level %d: %v\n", currLevel, err)
 			break
 		}
 
@@ -50,12 +50,12 @@ func (lsm *LSMTree) AddSstable(level int, summarySampleRate int, oneFile bool, b
 				sstableCount++
 			}
 		}
-		fmt.Printf("Nivo %d ima %d SSTabela\n", currLevel, sstableCount)
+		fmt.Printf("Level %d has %d SSTables\n", currLevel, sstableCount)
 
 		// Ako broj SSTabla dostiže granicu, radi kompakciju i idi na sledeći nivo
 		if sstableCount >= lsm.FilesPerLevel {
 			// Ovde pozivaš funkciju za kompakciju na tom nivou
-			fmt.Printf("Radi kompakciju na nivou %d\n", currLevel)
+			fmt.Printf("Compacting level %d\n", currLevel)
 			lsm.CompactLevel(currLevel, summarySampleRate, oneFile, blockManager, compression, dictionary)
 			// posle kompakcije, nastavi petlju na sledeći nivo
 		} else {
@@ -70,7 +70,7 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 	levelDir := fmt.Sprintf("data/sstable/L%d", level)
 	entries, err := os.ReadDir(levelDir)
 	if err != nil {
-		fmt.Printf("Greška: %v\n", err)
+		fmt.Printf("[Error] Reading level directory: %v\n", err)
 		return
 	}
 
@@ -84,7 +84,7 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 			sst := &sstable.Sstable{Filename: tocPath}
 			records, err := sstable.ReadAllRecords(sst, blockManager)
 			if err != nil {
-				fmt.Printf("Greska ucitavanja %s: %v\n", tocPath, err)
+				fmt.Printf("[Error] Reading records from %s: %v\n", tocPath, err)
 				continue
 			}
 			// Proveri da li je SSTabela kompresovana (prva linija u TOC-u)
@@ -120,13 +120,13 @@ func (lsm *LSMTree) CompactLevel(level int, sampleRate int, oneFile bool, blockM
 		err := os.RemoveAll(folder)
 
 		if err != nil {
-			fmt.Printf("Greska pri brisanju foldera %s: %v\n", folder, err)
+			fmt.Printf("[Error] Error removing folder %s: %v\n", folder, err)
 		}
 	}
 
 	// Sada ih ukloni iz master TOC-a
 	if err := sstable.RemoveSstablesFromMasterTOC(sstableNamesForTOC); err != nil {
-		fmt.Printf("Greska pri brisanju iz master TOC-a: %v\n", err)
+		fmt.Printf("[Error] Error removing from master TOC: %v\n", err)
 	}
 
 	// Merge-uj sve podatke

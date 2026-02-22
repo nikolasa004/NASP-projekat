@@ -34,11 +34,11 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 	disallowedPrefixes := []string{"bf_", "cms_", "__rateLimit__", "hll_", "sh_"}
 	toc, err := sstable.ReadTOCFile(tocPath)
 	if err != nil {
-		fmt.Println("Greška pri čitanju TOC fajla:", err)
+		fmt.Println("[Error] Reading TOC file:", err)
 		return nil
 	}
 	if len(toc.Files) == 0 {
-		fmt.Println("TOC fajl je prazan:", tocPath)
+		fmt.Println("[Error] TOC file is empty:", tocPath)
 		return nil
 	}
 
@@ -70,13 +70,13 @@ func NewSstableIterator(tocPath string, bm *BlockManager.BlockManager, prefix st
 		infoData, _ := os.Stat(dataPath)
 		dataLength = infoData.Size()
 	} else {
-		fmt.Println("Nevalidan TOC format:", toc.Files)
+		fmt.Println("[Error] Invalid TOC format:", toc.Files)
 		return nil
 	}
 
 	meta, err := sstable.ReadMetadata(dataPath)
 	if err != nil {
-		fmt.Println("Greška pri čitanju metapodataka:", err)
+		fmt.Println("[Error] Reading metadata:", err)
 		return nil
 	}
 
@@ -218,7 +218,7 @@ func GenerateIteratorsPrefixSstable(
 			)
 			fmt.Println(sstables[j], ":", nextGlobalIndex)
 			if iter == nil {
-				fmt.Println("Preskačem nevalidan SSTable:", toc)
+				fmt.Println("[Error] Skipping invalid SSTable:", toc)
 				continue
 			}
 
@@ -271,7 +271,7 @@ func GenerateIteratorsRangeSstable(
 			)
 
 			if iter == nil {
-				fmt.Println("Preskačem nevalidan SSTable:", toc)
+				fmt.Println("[Error] Skipping invalid SSTable:", toc)
 				continue
 			}
 

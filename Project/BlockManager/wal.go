@@ -499,8 +499,8 @@ func ReadAllRecords(block []byte, blockSize int64, isHeaderBlock bool) []WalReco
 		readCRC := CRC32(readCRCData)
 
 		if readCRC != uint32(crc) {
-			log.Print("CRC32 vrednost nije ispravna, zapis je korumpiran")
-			log.Print("Ovaj zapis je preskocen")
+			log.Print("CRC32 value is not valid, record is corrupted")
+			log.Print("This record is skipped")
 			i += int64(size) //preskacem ovaj zapis
 			continue
 		}
@@ -639,8 +639,8 @@ func ReadAllRecordsSstable(block []byte, blockSize int64, isHeaderBlock bool, fo
 		readCRC := CRC32(readCRCData)
 
 		if readCRC != uint32(crc) && !forSstable {
-			log.Print("CRC32 vrednost nije ispravna, zapis je korumpiran")
-			log.Print("Ovaj zapis je preskocen")
+			log.Print("CRC32 value is not valid, record is corrupted")
+			log.Print("This record is skipped")
 			i += int64(size) //preskacem ovaj zapis
 			continue
 		}

@@ -54,14 +54,14 @@ func ReadConfig() Config { //cita konfiguracioni fajl i vraca strukturu Config
 	file, err := os.ReadFile(filePath)
 
 	if err != nil {
-		log.Print("Greska pri citanju konfiguracionog fajla")
+		log.Print("[Error] Error while reading config file: ", err)
 
 		if os.IsNotExist(err) {
-			log.Print("Konfiguracioni fajl ne postoji, pokusaj pravljenja novog sa podrazumevanim vrednostima")
+			log.Print("[Error] Config file does not exist, creating a new one with default values.")
 			config = WriteConfig() // ako fajl ne postoji, pravi novi sa podrazumevanim vrednostima
 			return config
 		} else {
-			log.Print("Greska pri citanju konfiguracionog fajla, nastavljamo sa podrazumevanim vrednostima")
+			log.Print("[Error] Error while reading config file, continuing with default values")
 			return GetDefaultConfig() // ako postoji greska pri citanju, vraca podrazumevane vrednosti
 		}
 	}
@@ -78,71 +78,71 @@ func WriteConfig() Config { //pravi novi konfiguracioni fajl
 
 	file, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		log.Print("Greska pri kreiranju novog konfiguracionog fajla, nastavljamo sa podrazumevanim vrednostima")
+		log.Print("[Error] Error while creating new config file, continuing with default values")
 		return config
 	}
 
 	err = os.WriteFile(filePath, file, 0644)
 	if err != nil {
-		log.Print("Greska pri pisanju konfiguracionog fajla, nastavljamo sa podrazumevanim vrednostima")
+		log.Print("[Error] Error while writing config file, continuing with default values")
 		return config
 	}
 
-	log.Print("Novi konfiguracioni fajl je kreiran sa podrazumevanim vrednostima")
+	log.Print("[Info] New config file is created with default values")
 
 	return config
 }
 
 func CheckValidConfig(config *Config) { //proverava da li su vrednosti u konfiguraciji validne
 	if config.BlockManager.BlocksInSegment <= 0 {
-		log.Print("Nevalidan broj blokova u segmentu, postavljanje na podrazumevanu vrednost 10")
+		log.Print("[Error] Invalid number of blocks in segment, setting to default value 10")
 		config.BlockManager.BlocksInSegment = 10
 	}
 
 	if config.BlockManager.BlockSize != 4096 && config.BlockManager.BlockSize != 8192 && config.BlockManager.BlockSize != 16384 {
-		log.Print("Nevalidna velicina bloka, postavljanje na podrazumevanu vrednost 4096")
+		log.Print("[Error] Invalid block size, setting to default value 4096")
 		config.BlockManager.BlockSize = 4096 // 4KB
 	}
 
 	if config.BlockManager.BlockCacheSize <= 0 {
-		log.Print("Nevalidna velicina blok keša, postavljanje na podrazumevanu vrednost 10")
+		log.Print("[Error] Invalid block cache size, setting to default value 10")
 		config.BlockManager.BlockCacheSize = 10
 	}
 
 	if config.Memtable.ImplementType != "SkipList" && config.Memtable.ImplementType != "Hashmap" && config.Memtable.ImplementType != "BTree" {
-		log.Print("Nevalidan tip implementacije Memtable, postavljanje na podrazumevanu vrednost 'SkipList'")
+		log.Print("[Error] Invalid implement type for Memtable, setting to default value 'SkipList'")
 		config.Memtable.ImplementType = "SkipList"
 	}
 
 	if config.Memtable.NumOfTables <= 0 {
-		log.Print("Nevalidan broj tabela u Memtable, postavljanje na podrazumevanu vrednost 10")
+		log.Print("[Error] Invalid number of tables in Memtable, setting to default value 10")
 		config.Memtable.NumOfTables = 10
 	}
 
 	if config.Memtable.TableSize <= 0 {
-		log.Print("Nevalidna velicina tabele u Memtable, postavljanje na podrazumevanu vrednost 10")
+		log.Print("[Error] Invalid table size in Memtable, setting to default value 10")
 		config.Memtable.TableSize = 10
 	}
 
 	if config.SSTableManager.SummarySampleRate <= 0 {
-		log.Print("Nevalidna stopa uzorka za index summary, postavljanje na podrazumevanu vrednost 10")
+		log.Print("[Error] Invalid summary sample rate, setting to default value 10")
 		config.SSTableManager.SummarySampleRate = 10
 	}
 
 	if config.LSMTree.MaxLevels <= 0 {
-		log.Print("Nevalidan broj nivoa za LSM stablo, postavljanje na podrazumevanu vrednost 4")
+		log.Print("[Error] Invalid number of levels in LSM tree, setting to default value 4")
 		config.LSMTree.MaxLevels = 4
 	}
 	if config.LSMTree.MaxFilesPerLevel <= 0 {
-		log.Print("Nevalidan broj SSTabela po nivou, postavljanje na podrazumevanu vrednost 3")
+		log.Print("[Error] Invalid number of SSTables per level, setting to default value 3")
 		config.LSMTree.MaxFilesPerLevel = 3
 	}
 	if config.LSMTree.Multiplyer <= 0 {
-		log.Print("Nevalidan mnozitelj za broj SSTabela po nivou, postavljanje na podrazumevanu vrednost 10")
+		log.Print("[Error] Invalid multiplier for number of SSTables per level, setting to default value 10")
 		config.LSMTree.Multiplyer = 10
 	}
 	if config.ScannerCache.ScannerCacheSize <= 0 {
-		log.Print("Nevalidan broj stranica za kesiranje, postavljaju se podrazumevane vrednosti.")
+		log.Print("[Error] Invalid scanner cache size, setting to default value 5")
 		config.ScannerCache.ScannerCacheSize = 5
 	}
 }

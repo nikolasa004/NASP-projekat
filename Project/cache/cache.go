@@ -83,12 +83,12 @@ func (c *LRUCache) UpdateCache(flushedRecords []*Memtable.MemtableRecord) {
 		if record.Tombstone {
 			// Ako je tombstone (brisanje), ukloni iz keša
 			c.RemoveFromCache(record.Key)
-			fmt.Println("Uklonjena vrednost iz keša za ključ: ", record.Key)
+			fmt.Println("[Cache] Removed record from cache:", record.Key)
 		} else {
 			// Inače ažuriraj vrednost u kešu
 			c.RemoveFromCache(record.Key) // Ukloni staru vrednost ako postoji
 			c.PutInCache(record.Key, record.Value)
-			fmt.Println("Ažurirana vrednost u kešu za ključ: ", record.Key)
+			fmt.Println("[Cache] Updated value in cache for key:", record.Key)
 		}
 	}
 }

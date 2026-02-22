@@ -84,28 +84,28 @@ func CheckRateLimit(tokenBucketKey string, memtable *Memtable.Memtable, blockMan
 	if record, found := memtable.GetRecord(tokenBucketKey); found {
 		state, err = DeserializeRateLimit([]byte(record.Value))
 		if err != nil {
-			fmt.Println("Greška pri čitanju token bucketa iz memtable-a:", err)
+			fmt.Println("[Error] Reading token bucket from memtable:", err)
 			return false
 		}
 	} else if SSrecord, found := sstable.FindInSstables(tokenBucketKey, *blockManager, compressionDictionary); found {
 		state, err = DeserializeRateLimit([]byte(SSrecord.Value))
 		if err != nil {
-			fmt.Println("Greška pri čitanju token bucketa iz SSTable-a:", err)
+			fmt.Println("[Error] Reading token bucket from SSTable:", err)
 			return false
 		}
 	} else {
-		fmt.Println("Nema token bucketa. Neispravna konfiguracija!")
+		fmt.Println("[Error] No token bucket found. Invalid configuration!")
 		return false
 	}
 
 	if !state.CanConsumeToken() {
-		fmt.Println("Prekoračenje tokena, pokušajte kasnije.")
+		fmt.Println("[RateLimit] Token bucket empty. Request denied.")
 		return false
 	}
 
 	serialized, err := SerializeRateLimit(state)
 	if err != nil {
-		fmt.Println("Greška pri serijalizaciji token bucketa:", err)
+		fmt.Println("[Error] Serializing token bucket:", err)
 		return false
 	}
 

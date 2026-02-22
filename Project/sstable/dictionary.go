@@ -23,12 +23,12 @@ func NewDictionary() *Dictionary {
 
 	_, err := os.ReadDir(dictPath)
 	if err != nil {
-		log.Print("Folder za rečnik kompresije ne postoji, pokrecemo kreiranje novog")
+		log.Print("[Error] Directory for compression dictionary not found, creating new one...")
 
 		err = os.MkdirAll(dictPath, 0755)
 		if err != nil {
-			log.Print("Greska pri kreiranju foldera za rečnik kompresije, nije moguce nastaviti sa radom")
-			log.Fatal("Greska: ", err)
+			log.Print("[Error] Error creating directory for compression dictionary, cannot continue")
+			log.Fatal("Error: ", err)
 		}
 	}
 

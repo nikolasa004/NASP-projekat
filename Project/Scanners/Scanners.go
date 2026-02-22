@@ -53,7 +53,7 @@ mainLoop:
 				cachedPage, found := cache.Get(currentPage)
 				if found {
 
-					fmt.Printf("Stranica %d:\n", currentPage+1)
+					fmt.Printf("Page %d:\n", currentPage+1)
 					for _, rec := range cachedPage {
 						fmt.Printf("Key: %s, Value: %s\n", rec.Key, rec.Value)
 					}
@@ -112,9 +112,9 @@ mainLoop:
 					}
 
 					if len(pageOfIterators) == 0 {
-						fmt.Println("Nema zapisa na ovoj stranici.")
+						fmt.Println("No records on page", currentPage+1)
 						if firstIteratiron {
-							fmt.Println("Nema podataka!")
+							fmt.Println("No records found for the given scan criteria.")
 							return
 						}
 						if currentPage > 0 {
@@ -137,7 +137,7 @@ mainLoop:
 
 					// Ispis
 
-					fmt.Printf("Stranica %d:\n", currentPage+1)
+					fmt.Printf("Page %d:\n", currentPage+1)
 					for _, rec := range pageOfIterators {
 						fmt.Printf("Key: %s, Value: %s\n", rec.Key, rec.Value)
 					}
@@ -148,7 +148,7 @@ mainLoop:
 			skipToInput = false
 		}
 		// Upit za sledecu komandu
-		fmt.Printf("Unesi 'n' (naredna), 'p' (prethodna), broj strane, ili 'q' za izlaz: ")
+		fmt.Println("\nEnter 'n' for next page, 'p' for previous page, a page number to jump to that page, or 'q' to quit:")
 		if !scanner.Scan() {
 			break
 		}
@@ -161,25 +161,25 @@ mainLoop:
 			currentPage++
 		case "p":
 			if currentPage == 0 {
-				fmt.Println("Vec si na prvoj stranici.")
+				fmt.Println("Already at the first page.")
 				continue
 			}
 			currentPage--
 		default:
 			pageNum, err := strconv.Atoi(input)
 			if err != nil || pageNum <= 0 {
-				fmt.Println("Neispravan unos. Unesi validan broj strane.")
+				fmt.Println("Invalid input. Please enter a valid page number.")
 				continue
 			}
 			desiredPage := pageNum - 1
 			if desiredPage < 0 {
-				fmt.Println("Broj strane mora biti pozitivan.")
+				fmt.Println("Page number must be positive.")
 				continue
 			}
 
 			cachedPage, found := cache.Get(desiredPage)
 			if found {
-				fmt.Printf("Stranica %d:\n", desiredPage+1)
+				fmt.Printf("Page %d:\n", desiredPage+1)
 				for _, rec := range cachedPage {
 					fmt.Printf("Key: %s, Value: %s\n", rec.Key, rec.Value)
 				}
@@ -254,7 +254,7 @@ mainLoop:
 
 				// Ako se pojavi prazna stranica ispisi
 				if len(merged) == 0 {
-					fmt.Println("Nema zapisa na stranici", desiredPage+1)
+					fmt.Println("No records on page", desiredPage+1)
 					continue mainLoop
 				}
 			}

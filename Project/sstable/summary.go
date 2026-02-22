@@ -342,7 +342,7 @@ func ReadSummaryFromBlocks(blocks [][]byte) *Summary {
 	// --- 1. Pročitaj MIN ---
 	minKey, blk, cur, err := readHeaderKey(blocks, 0, 0)
 	if err != nil {
-		fmt.Println("Error reading MIN:", err)
+		fmt.Println("[Error] Error reading MIN:", err)
 		return nil
 	}
 	summary.Min = minKey
@@ -351,7 +351,7 @@ func ReadSummaryFromBlocks(blocks [][]byte) *Summary {
 	// --- 2. Pročitaj MAX ---
 	maxKey, blk, cur, err := readHeaderKey(blocks, blk, cur)
 	if err != nil {
-		fmt.Println("Error reading MAX:", err)
+		fmt.Println("[Error] Error reading MAX:", err)
 		return nil
 	}
 	summary.Max = maxKey
@@ -427,7 +427,7 @@ func readHeaderKey(blocks [][]byte, startBlockIndex int, startCursor int) (strin
 
 	for {
 		if blockIndex >= len(blocks) {
-			return "", blockIndex, cursor, fmt.Errorf("not enough blocks to read header key")
+			return "", blockIndex, cursor, fmt.Errorf("[Error] Not enough blocks to read header key")
 		}
 
 		block := blocks[blockIndex]
@@ -448,7 +448,7 @@ func readHeaderKey(blocks [][]byte, startBlockIndex int, startCursor int) (strin
 
 		for bytesRemaining > 0 {
 			if blockIndex >= len(blocks) {
-				return "", blockIndex, cursor, fmt.Errorf("not enough blocks for key fragment")
+				return "", blockIndex, cursor, fmt.Errorf("[Error] Not enough blocks for key fragment")
 			}
 
 			block = blocks[blockIndex]
@@ -504,7 +504,7 @@ func (s *Summary) ReadSummary(offset uint64, filename string) error {
 
 	_, err = file.Seek(int64(offset), 0)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("[Error] Failed to seek in summary file: %v", err)
 	}
 
 	var minLen uint64

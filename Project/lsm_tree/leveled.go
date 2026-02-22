@@ -24,7 +24,7 @@ func (lsm *LSMTree) AddSstableLeveled(level int, summarySampleRate int, oneFile 
 		entries, err := os.ReadDir(levelDir)
 		if err != nil {
 			// Ako ne postoji folder, ništa za kompakciju
-			fmt.Printf("Nema foldera za nivo %d: %v\n", currLevel, err)
+			fmt.Printf("There is no directory for level %d: %v\n", currLevel, err)
 			break
 		}
 
@@ -35,11 +35,11 @@ func (lsm *LSMTree) AddSstableLeveled(level int, summarySampleRate int, oneFile 
 				sstableCount++
 			}
 		}
-		fmt.Printf("Nivo %d ima %d SSTabela (granica za ovaj nivo: %d)\n", currLevel, sstableCount, maxFiles)
+		fmt.Printf("Level %d has %d SSTables (edge for this level: %d)\n", currLevel, sstableCount, maxFiles)
 
 		// Ako broj SSTabela dostiže granicu, radi kompakciju i idi na sledeći nivo
 		if sstableCount >= maxFiles {
-			fmt.Printf("Radi kompakciju na nivou %d\n", currLevel)
+			fmt.Printf("Compacting level %d\n", currLevel)
 			lsm.CompactLevelLeveled(currLevel, summarySampleRate, oneFile, blockManager, compression, dictionary)
 			// Granica za sledeći nivo je puta 10
 			maxFiles *= multiplyer
@@ -58,12 +58,12 @@ func (lsm *LSMTree) CompactLevelLeveled(
 	compression bool,
 	dictionary *sstable.Dictionary,
 ) {
-	fmt.Printf("Kompaktujem nivo %d\n", level)
+	fmt.Printf("Compacting level %d\n", level)
 
 	levelDir := fmt.Sprintf("data/sstable/L%d", level)
 	entries, err := os.ReadDir(levelDir)
 	if err != nil {
-		fmt.Printf("Greška: %v\n", err)
+		fmt.Printf("[Error] Reading level directory: %v\n", err)
 		return
 	}
 
@@ -76,10 +76,10 @@ func (lsm *LSMTree) CompactLevelLeveled(
 		}
 	}
 	if oldestSstable == "" {
-		fmt.Println("Nema SSTabela za kompakciju na ovom nivou.")
+		fmt.Println("[Error] No SSTables to compact on level.")
 		return
 	}
-	fmt.Printf("Kompaktujem najstariju SSTabelu: %s\n", oldestSstable)
+	fmt.Printf("Compacting the oldest SSTable: %s\n", oldestSstable)
 
 	// 2. Proveri da li je kompresovana
 	tocPath := fmt.Sprintf("%s/%s/%s-TOC.txt", levelDir, oldestSstable, oldestSstable)
@@ -98,15 +98,15 @@ func (lsm *LSMTree) CompactLevelLeveled(
 	sst := &sstable.Sstable{Filename: tocPath}
 	minKey, maxKey, err := sstable.GetMinMaxKey(sst, blockManager, compression, dictionary)
 	if err != nil {
-		fmt.Printf("Ne mogu da pročitam min/max ključ: %v\n", err)
+		fmt.Printf("[Error] Cannot read min/max key: %v\n", err)
 		return
 	}
-	fmt.Printf("Min ključ: %s, Max ključ: %s\n", minKey, maxKey)
+	fmt.Printf("Min key: %s, Max key: %s\n", minKey, maxKey)
 
 	// 4. Učitaj sve zapise iz najstarije SSTabele
 	recordsOldest, err := sstable.ReadAllRecords(sst, blockManager)
 	if err != nil {
-		fmt.Printf("Greska ucitavanja %s: %v\n", tocPath, err)
+		fmt.Printf("[Error] Reading records from %s: %v\n", tocPath, err)
 		return
 	}
 	// --- Dekomprimuj ključeve ako je potrebno ---
@@ -158,7 +158,7 @@ func (lsm *LSMTree) CompactLevelLeveled(
 			}
 		}
 	}
-	fmt.Printf("Našao %d overlapp tabela na L%d: %v\n", len(overlappingFolders), level+1, overlappingFolders)
+	fmt.Printf("Found %d overlapping tables on level %d: %v\n", len(overlappingFolders), level+1, overlappingFolders)
 
 	// 9. Obriši stare foldere
 	os.RemoveAll(fmt.Sprintf("%s/%s", levelDir, oldestSstable))
@@ -170,12 +170,12 @@ func (lsm *LSMTree) CompactLevelLeveled(
 	sstableToDelete := fmt.Sprintf("%s/%s", levels[2], oldestSstable)
 	// isto za najstariju
 	if err := sstable.RemoveSstablesFromMasterTOC([]string{sstableToDelete}); err != nil {
-		fmt.Printf("Greska pri brisanju najstarije SSTabele iz master TOC-a: %v\n", err)
+		fmt.Printf("[Error] Error removing oldest SSTable from master TOC: %v\n", err)
 	} else {
 		//fmt.Printf("Uspesno uklonjena najstarija SSTabela iz master TOC-a: %s\n", fmt.Sprintf("%s/%s", levelDir, oldestSstable))
 	}
-	fmt.Printf("Uklonjen nivo: %s\n", levelDir)
-	fmt.Printf("Uklonjen sstable: %s\n", oldestSstable)
+	fmt.Printf("Removed level: %s\n", levelDir)
+	fmt.Printf("Removed sstable: %s\n", oldestSstable)
 
 	for i, path := range overlappingFolders {
 		overlappingFolders[i] = sstable.ExtractMasterTOCPath(path)
@@ -183,7 +183,7 @@ func (lsm *LSMTree) CompactLevelLeveled(
 
 	//sada ih ukloni iz master TOC-a
 	if err := sstable.RemoveSstablesFromMasterTOC(overlappingFolders); err != nil {
-		fmt.Printf("Greska pri brisanju iz master TOC-a: %v\n", err)
+		fmt.Printf("[Error] Error removing overlapping SSTables from master TOC: %v\n", err)
 	}
 
 	// 6. Merge i sort

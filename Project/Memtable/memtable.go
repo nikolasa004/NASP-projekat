@@ -121,19 +121,18 @@ func (table *Memtable) PutRecord(tombstone bool, key string, value string, block
 		foundRecord.SetTimestamp(newTimeStamp)
 		foundRecord.SetValue([]byte(value))
 		foundRecord.SetTombstone(tombstone)
-		fmt.Println("MEM - record updated :", foundRecord.Key)
+		fmt.Println("[MEM] Updated record:", foundRecord.Key)
 		return nil, false
 	}
 
 	record := table.createRecord(tombstone, key, []byte(value)) // kreira se novi zapis
 	(*currTable).AddRecord(record)
-	fmt.Println("MEM - record added :", record.GetKey())
+	fmt.Println("[MEM] record added :", record.GetKey())
 
 	if (*currTable).GetLength() >= table.tableSize { // trenutna tabela je napunjena
 		(*currTable).SetState("full")
 		(*currTable).SetLastBlockPosition(blockManager.GetCurrentBlock()) // cuvamo poslednji blok vezan za ovu tabelu
 		table.activeTable = (table.activeTable + 1) % table.NumOfTables   // rotiramo tabele
-		fmt.Println("Prva korisna nakon flushovanja ove tabele:segment-", currSegment, ",blok-", blockManager.GetCurrentBlock())
 
 		currTable = &table.tables[table.activeTable]
 		if (*currTable).GetState() == "empty" { // ako je nova tabela prazna postaje aktivna
@@ -151,8 +150,7 @@ func (t *Memtable) flushTable(table *Table, blockManager *BlockManager.BlockMana
 	lowWatermark := (*table).GetLinkedSegment()
 	blockManager.DeleteSegments(lowWatermark) // brisemo sve segmente do poslednjeg povezanog za ovu tabelu
 
-	fmt.Println("MEM - FLUSHING TABLE")
-	fmt.Println("MEM- brisem ", (*table).GetLinkedSegment(), " segmenata")
+	fmt.Println("[MEM] FLUSHING TABLE")
 
 	listOfRecords := (*table).GetSortedRecords()
 

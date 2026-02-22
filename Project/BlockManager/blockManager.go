@@ -12,20 +12,19 @@ import (
 	"strings"
 )
 
-//importovanje potrebnih paketa
 
 type BlockManager struct {
 	blockSize               int
-	blocksPerSegment        int //blokova po segmentu u wal-u
+	blocksPerSegment        int
 	bufferPool              *BufferPool
-	currentBlock            int              // trenutni segment i blok u wal-u
-	walPath                 string           //putanja do wal foldera
-	segments                []string         //lista segmenata
-	orderOfSegments         map[int]int      //redosled segmenata, kljuc je indeks u sortiranoj listi, vrednost je pravi broj segmenta jer ne mora da prvi bude 0 posle brisanja
-	differentConfigSegments map[string][]int //segmenti koji imaju drugaciju konfiguraciju od trenutne
+	currentBlock            int
+	walPath                 string
+	segments                []string
+	orderOfSegments         map[int]int
+	differentConfigSegments map[string][]int
 }
 
-func (blockManeger *BlockManager) GetBlockSize() int { //geter za velicinu bloka
+func (blockManeger *BlockManager) GetBlockSize() int {
 	return blockManeger.blockSize
 }
 
@@ -41,18 +40,18 @@ func (blockManager *BlockManager) GetBufferPool() *BufferPool {
 	return blockManager.bufferPool
 }
 
-func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { //konstruktor za BlockManager
+func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager {
 	bufferPool := NewBufferPool(poolSize)
 	walPath := "BlockManager/wal"
 
 	files, err := os.ReadDir(walPath)
 	if err != nil {
-		log.Print("WAL folder ne postoji, pokrecemo kreiranje novog")
+		log.Print("[Error] Reading WAL directory failed, creating new directory.")
 
 		err = os.MkdirAll(walPath, 0755)
 		if err != nil {
-			log.Print("Greska pri kreiranju WAL foldera, nije moguce nastaviti sa radom")
-			log.Fatal("Greska: ", err)
+			log.Print("[Error] Creating WAL directory failed, cannot proceed.")
+			log.Fatal("[Error]: ", err)
 		}
 	}
 
@@ -61,29 +60,27 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 	var currentBlock int
 	orderOfSegments := make(map[int]int)
 	differentConfigSegments := make(map[string][]int)
-	if len(files) == 0 { //pravimo pocetni segment
+	if len(files) == 0 {
 		segment := walPath + "/wal_0.log"
 		segments = append(segments, segment)
 
 		file, err := os.Create(segment)
 		if err != nil {
-			log.Print("Greska pri kreiranju pocetnog segmenta, nije moguce nastaviti sa radom")
-			log.Fatal("Greska: ", err)
+			log.Print("[Error] Creating initial segment failed")
+			log.Fatal("[Error]: ", err)
 		}
 
-		//dodajemo heder koji ce sadrzati informacije o velicini bloka, broju blokova po segmentu i koji je broj segmenta zbog mogucih promena
-		//dodajemo i koji je prvi koristan blok u segmentu
 		header := make([]byte, 16)
 		binary.LittleEndian.PutUint32(header[:4], uint32(blockSize))
 		binary.LittleEndian.PutUint32(header[4:8], uint32(blocksPerSegment))
 		binary.LittleEndian.PutUint32(header[8:12], uint32(0))
-		binary.LittleEndian.PutUint32(header[12:16], uint32(0)) //ovo se koristi za memtable rekonstrukciju i menja se posle flasovanja memtable-a
+		binary.LittleEndian.PutUint32(header[12:16], uint32(0))
 
 		_, err = file.Write(header)
 
 		if err != nil {
-			log.Print("Greska pri pisanju hedera u pocetni segment, nije moguce nastaviti sa radom")
-			log.Fatal("Greska: ", err)
+			log.Print("[Error] Writing header to initial segment failed, cannot proceed with operation")
+			log.Fatal("[Error]: ", err)
 		}
 
 		file.Close()
@@ -102,8 +99,8 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 			file, err := os.OpenFile(walPath+"/"+segment.Name(), os.O_RDONLY, 0644)
 
 			if err != nil {
-				log.Print("Greska pri otvaranju segmenta: ", segment.Name())
-				log.Print("Podaci unutar segmenta nece biti dostupni")
+				log.Print("[Error] Opening segment: ", segment.Name())
+				log.Print("[Error] Data within segment will not be available")
 				file.Close()
 				continue
 			}
@@ -111,8 +108,8 @@ func NewBlockManager(blockSize, blocksPerSegment, poolSize int) *BlockManager { 
 			_, err = file.Read(headerBlock)
 
 			if err != nil {
-				log.Print("Greska pri citanju hedera iz segmenta: ", segment.Name())
-				log.Print("Podaci unutar segmenta nece biti dostupni")
+				log.Print("[Error] Reading header from segment: ", segment.Name())
+				log.Print("[Error] Data within segment will not be available")
 				file.Close()
 				continue
 			}
@@ -336,8 +333,8 @@ func (blockManager *BlockManager) GetWalBlock(filename string, blockPosition, bl
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0644)
 
 	if err != nil {
-		log.Println("Greska pri otvaranju segmenta: ", filename)
-		log.Println("Neki podaci ce biti izgubljeni")
+		log.Println("[Error] Opening WAL file: ", filename)
+		log.Println("Some data may be lost")
 		return nil
 	}
 
@@ -346,8 +343,8 @@ func (blockManager *BlockManager) GetWalBlock(filename string, blockPosition, bl
 	seekValue := int64(blockPosition * blockSize)
 	info, err := file.Stat()
 	if err != nil {
-		log.Println("Greska pri dobijanju informacija o segmentu: ", filename)
-		log.Println("Neki podaci ce biti izgubljeni")
+		log.Println("[Error] Getting information about segment: ", filename)
+		log.Println("Some data may be lost")
 		return nil
 	}
 
@@ -364,8 +361,8 @@ func (blockManager *BlockManager) GetWalBlock(filename string, blockPosition, bl
 	_, err = file.Read(block)
 
 	if err != nil {
-		log.Println("Greska pri citanju bloka iz segmenta: ", filename)
-		log.Println("Neki podaci ce biti izgubljeni")
+		log.Println("[Error] Reading block from segment: ", filename)
+		log.Println("Some data may be lost")
 		return nil
 	}
 
@@ -399,7 +396,7 @@ func (blockManager *BlockManager) PutBlock(key string, value []byte) { //funkcij
 		parts := strings.Split(keyFromFlush, "-")
 		blockNumber, err := strconv.Atoi(parts[1])
 		if err != nil {
-			log.Println("Greska pri konverziji broja bloka:", err)
+			log.Println("[Error] Converting block number:", err)
 			return
 		}
 		blockManager.WriteBlock(returnedValue, blockManager.blockSize, blockNumber, parts[0]) //upisujemo blok u wal
@@ -411,11 +408,11 @@ func (blockManager *BlockManager) WriteBlock(value []byte, seekValue, blockNumbe
 
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Println("Segment ", filePath, " ne postoji, ako ste ga rucno obrisali doce do gubljenja podataka")
-			log.Println("Ako niste, ignorisite ovu poruku") //najverovatnije je flasovan memtable i segment je obrisan a ostali su podaci u baferu
+			log.Println("[Error] Segment ", filePath, " does not exist, if you manually deleted it, data loss may occur")
+			log.Println("If not, ignore this message") //najverovatnije je flasovan memtable i segment je obrisan a ostali su podaci u baferu
 		} else {
-			log.Println("Greska pri otvaranju segmenta: ", filePath)
-			log.Println("Neki podaci ce biti izgubljeni")
+			log.Println("[Error] Opening segment: ", filePath)
+			log.Println("Some data may be lost")
 		}
 		return
 	}
@@ -426,8 +423,8 @@ func (blockManager *BlockManager) WriteBlock(value []byte, seekValue, blockNumbe
 	_, err = file.Write(value)
 
 	if err != nil {
-		log.Println("Greska pri pisanju bloka u segment: ", filePath)
-		log.Println("Neki podaci ce biti izgubljeni")
+		log.Println("[Error] Writing block to segment: ", filePath)
+		log.Println("Some data may be lost")
 	}
 }
 
@@ -588,14 +585,14 @@ func (bm *BlockManager) PutSstableRawBlock(
 
 	file, err := os.OpenFile(filename, os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatalf("Greska pri otvaranju fajla %s: %v", filename, err)
+		log.Fatalf("[Error] Opening file %s: %v", filename, err)
 	}
 	defer file.Close()
 
 	if !multipleFiles {
 		_, err := file.Seek(int64(offset), 0)
 		if err != nil {
-			log.Fatalf("Greska pri seek-u: %v", err)
+			log.Fatalf("[Error] Seeking in file %s: %v", filename, err)
 		}
 	}
 
@@ -647,7 +644,7 @@ func (bm *BlockManager) PutSstableRawBlock(
 
 				_, err := file.Write(block)
 				if err != nil {
-					log.Fatalf("Greska pri upisu bloka: %v", err)
+					log.Fatalf("[Error] Writing block: %v", err)
 				}
 
 				totalWritten += uint64(len(block))
@@ -670,7 +667,7 @@ func (bm *BlockManager) PutSstableRawBlock(
 
 				_, err := file.Write(block)
 				if err != nil {
-					log.Fatalf("Greska pri upisu bloka posle MAX: %v", err)
+					log.Fatalf("[Error] Writing block after MAX: %v", err)
 				}
 
 				totalWritten += uint64(len(block))
@@ -686,7 +683,7 @@ func (bm *BlockManager) PutSstableRawBlock(
 
 		_, err := file.Write(block)
 		if err != nil {
-			log.Fatalf("Greska pri upisu poslednjeg bloka: %v", err)
+			log.Fatalf("[Error] Writing last block: %v", err)
 		}
 
 		totalWritten += uint64(len(block))
@@ -699,7 +696,7 @@ func ExtractSstableNumber(path string) (int, error) {
 	re := regexp.MustCompile(`sstable-(\d{4})`)
 	match := re.FindStringSubmatch(path)
 	if len(match) < 2 {
-		return 0, fmt.Errorf("broj nije pronađen u pathu")
+		return 0, fmt.Errorf("[Error] Invalid sstable filename format: %s", path)
 	}
 	return strconv.Atoi(match[1])
 }
@@ -769,7 +766,7 @@ func (bm *BlockManager) ReadSstableRecordsFromBlocks(
 	tableIdx, err := ExtractSstableNumber(path)
 
 	if err != nil {
-		return nil, blockKeys, blocks, fmt.Errorf("greška pri ekstrakciji broja sstable iz patha %s: %v", path, err)
+		return nil, blockKeys, blocks, fmt.Errorf("[Error] Extracting sstable number from path %s: %v", path, err)
 	}
 
 	var blockKey string
@@ -856,13 +853,13 @@ func (bm *BlockManager) WriteBloomFilter(filterData []byte, filename string) (wr
 
 	file, err := os.OpenFile(filename, os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatalf("Greška pri otvaranju fajla: %v", err)
+		log.Fatalf("[Error] Opening file %s: %v", filename, err)
 	}
 	defer file.Close()
 
 	n, err := file.Write(block)
 	if err != nil {
-		log.Fatalf("Greška pri upisu Bloom filter bloka: %v", err)
+		log.Fatalf("[Error] Writing Bloom filter block: %v", err)
 	}
 
 	return uint64(n)
@@ -907,9 +904,9 @@ func (blockManager *BlockManager) CreateNewWalSegment() []byte {
 
 	file, err := os.Create(newSegment)
 	if err != nil {
-		log.Println("Greska pri kreiranju novog segmenta: ", newSegment)
-		log.Println("Nije moguce nastaviti sa radom")
-		log.Fatal("Greska: ", err)
+		log.Println("[Error] Creating new segment: ", newSegment)
+		log.Println("Cannot continue working")
+		log.Fatal("[Error] Creating new segment: ", err)
 		return nil
 	}
 
@@ -922,9 +919,9 @@ func (blockManager *BlockManager) CreateNewWalSegment() []byte {
 	_, err = file.Write(header)
 
 	if err != nil {
-		log.Println("Greska pri pisanju hedera u novi segment: ", newSegment)
-		log.Println("Nije moguce nastaviti sa radom")
-		log.Fatal("Greska: ", err)
+		log.Println("[Error] Writing header to new segment: ", newSegment)
+		log.Println("Cannot continue working")
+		log.Fatal("[Error] Writing header to new segment: ", err)
 		return nil
 	}
 
@@ -949,7 +946,7 @@ func (blockManager *BlockManager) FlushUnsaved() { //funkcija koja upisuje sve n
 		parts := strings.Split(key, "-")
 		blockNumber, err := strconv.Atoi(parts[1])
 		if err != nil {
-			log.Println("Greska pri konverziji broja bloka:", err)
+			log.Println("[Error] Converting block number:", err)
 			continue
 		}
 
@@ -985,7 +982,7 @@ func (bm *BlockManager) WriteDictionary(data []byte, filename string) error { //
 	if len(data) == 0 {
 		file, err := os.Create(filename)
 		if err != nil {
-			return fmt.Errorf("greška pri kreiranju datoteke %s: %v", filename, err)
+			return fmt.Errorf("[Error] Creating dictionary file %s: %v", filename, err)
 		}
 		defer file.Close()
 		return nil
@@ -993,12 +990,12 @@ func (bm *BlockManager) WriteDictionary(data []byte, filename string) error { //
 
 	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
-		return fmt.Errorf("greška pri otvaranju datoteke %s: %v", filename, err)
+		return fmt.Errorf("[Error] Opening dictionary file %s: %v", filename, err)
 	}
 	defer file.Close()
 	_, err = file.Write(data)
 	if err != nil {
-		return fmt.Errorf("greška pri pisanju u datoteku %s: %v", filename, err)
+		return fmt.Errorf("[Error] Writing to dictionary file %s: %v", filename, err)
 	}
 	return nil
 }
@@ -1006,19 +1003,19 @@ func (bm *BlockManager) WriteDictionary(data []byte, filename string) error { //
 func (bm *BlockManager) ReadDictionary(filename string) ([]byte, error) {
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		if err := bm.WriteDictionary([]byte{}, filename); err != nil {
-			return nil, fmt.Errorf("greška pri kreiranju datoteke %s: %v", filename, err)
+			return nil, fmt.Errorf("[Error] Creating dictionary file %s: %v", filename, err)
 		}
 		return nil, nil
 	}
 
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("greška pri otvaranju datoteke %s: %v", filename, err)
+		return nil, fmt.Errorf("[Error] Opening dictionary file %s: %v", filename, err)
 	}
 	defer file.Close()
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return nil, fmt.Errorf("greška pri čitanju datoteke %s: %v", filename, err)
+		return nil, fmt.Errorf("[Error] Reading dictionary file %s: %v", filename, err)
 	}
 	if len(data) == 0 {
 		return nil, nil

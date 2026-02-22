@@ -29,7 +29,6 @@ func BuildTree(data [][]byte) *MerkleNode {
 	// Kreiranje listova
 	nodes := make([]*MerkleNode, 0, len(data))
 	for _, d := range data {
-		//fmt.Println("Hashing data:", string(d))
 		h := hash(d)
 		node := &MerkleNode{Hash: h}
 		nodes = append(nodes, node)
@@ -93,12 +92,12 @@ func ValidateMerkleTree(expected, actual *MerkleNode, blockIndex *int) []int {
 
 func CompareMerkleTrees(expectedRoot, actualRoot *MerkleNode) {
 	if expectedRoot == nil || actualRoot == nil {
-		fmt.Println("Jedno od Merkle stabala je nil.")
+		fmt.Println("One of the Merkle trees is nil.")
 		return
 	}
 
 	if expectedRoot.Hash == actualRoot.Hash {
-		fmt.Println("Merkle stabla su identična.")
+		fmt.Println("Merkle trees are identical.")
 		return
 	}
 
@@ -106,12 +105,11 @@ func CompareMerkleTrees(expectedRoot, actualRoot *MerkleNode) {
 	invalid := ValidateMerkleTree(expectedRoot, actualRoot, &index)
 
 	if len(invalid) == 0 {
-		fmt.Println("Merkle stabla se razlikuju, ali nisu pronađeni konkretni neispravni blokovi.")
-		//fmt.Println("Merkle stabla su identična.")
+		fmt.Println("Merkle trees are different, but no specific invalid blocks found.")
 	} else {
-		fmt.Println("Merkle stabla se razlikuju. Neispravni blokovi:")
+		fmt.Println("Merkle trees are different. Invalid blocks:")
 		for _, idx := range invalid {
-			fmt.Println("- Blok:", idx)
+			fmt.Println("- Block:", idx)
 		}
 	}
 }
@@ -119,11 +117,11 @@ func CompareMerkleTrees(expectedRoot, actualRoot *MerkleNode) {
 func SaveMerkleTree(root *MerkleNode, filename string) error {
 	data, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
-		return fmt.Errorf("neuspešno serijalizovanje Merkle stabla")
+		return fmt.Errorf("Unsuccessful Merkle tree serialization: %v", err)
 	}
 	err = os.WriteFile(filename, data, 0644)
 	if err != nil {
-		return fmt.Errorf("neuspešno upisivanje u fajl")
+		return fmt.Errorf("Unsuccessful write to file: %v", err)
 	}
 	return nil
 }
@@ -160,52 +158,52 @@ func IsSingleFile(filename string) bool {
 func VerifySstableMerkle(tocInput string, blockManager *BlockManager.BlockManager) error {
 	tocFilename, err := FindTOCPath(tocInput)
 	if err != nil {
-		return fmt.Errorf("nije pronađena SSTable: %v", err)
+		return fmt.Errorf("[Error] SSTable not found: %v", err)
 	}
 
 	toc, err := ReadTOCFile(tocFilename)
 	if err != nil {
-		return fmt.Errorf("greška prilikom čitanja TOC fajla: %v", err)
+		return fmt.Errorf("[Error] Error reading TOC file: %v", err)
 	}
 
 	if toc.SingleFile {
 		sstableFilename := toc.Files[0]
 		data, err := ReadSSTable(sstableFilename, blockManager)
 		if err != nil {
-			return fmt.Errorf("greška prilikom čitanja SSTable (single): %v", err)
+			return fmt.Errorf("[Error] Error reading SSTable (single): %v", err)
 		}
 		newMerkle := BuildTree(data)
 
 		metadata, err := ReadMetadata(sstableFilename)
 		if err != nil {
-			return fmt.Errorf("greška prilikom čitanja metapodataka: %v", err)
+			return fmt.Errorf("[Error] Error reading metadata: %v", err)
 		}
 		file, err := os.Open(sstableFilename)
 		if err != nil {
-			return fmt.Errorf("greška prilikom otvaranja fajla: %v", err)
+			return fmt.Errorf("[Error] Error opening file: %v", err)
 		}
 		defer file.Close()
 		merkleBytes := make([]byte, metadata.MerkleTreeLength)
 		_, err = file.ReadAt(merkleBytes, int64(metadata.MerkleTreeOffset))
 		if err != nil {
-			return fmt.Errorf("greška prilikom čitanja Merkle stabla iz fajla: %v", err)
+			return fmt.Errorf("[Error] Error reading Merkle tree from file: %v", err)
 		}
 		storedMerkle := &MerkleNode{}
 		err = json.Unmarshal(merkleBytes, storedMerkle)
 		if err != nil {
-			return fmt.Errorf("greška prilikom parsiranja Merkle stabla: %v", err)
+			return fmt.Errorf("[Error] Error parsing Merkle tree: %v", err)
 		}
 		CompareMerkleTrees(newMerkle, storedMerkle)
 	} else {
 		merkleFilename := toc.Files[len(toc.Files)-1]
 		data, err := ReadSSTableMultiMode(tocFilename, blockManager)
 		if err != nil {
-			return fmt.Errorf("greška prilikom čitanja SSTable (multi): %v", err)
+			return fmt.Errorf("[Error] Error reading SSTable (multi): %v", err)
 		}
 		newMerkle := BuildTree(data)
 		storedMerkle, err := LoadMerkleTree(merkleFilename)
 		if err != nil {
-			return fmt.Errorf("greška prilikom učitavanja Merkle stabla: %v", err)
+			return fmt.Errorf("[Error] Error loading Merkle tree: %v", err)
 		}
 		CompareMerkleTrees(newMerkle, storedMerkle)
 	}

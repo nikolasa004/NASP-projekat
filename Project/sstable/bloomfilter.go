@@ -45,7 +45,7 @@ func (bf *BloomFilter) Add(item string) {
 		mask := byte(1 << bitPosition)
 		bf.BitSet[byteIndex] |= mask
 	}
-	print("Add succesefully")
+	print("Add successfully")
 }
 
 func (bf *BloomFilter) Check(item string) bool {

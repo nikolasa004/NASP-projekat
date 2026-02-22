@@ -54,7 +54,7 @@ func (c *LRUCache) Put(page int, values []Iterator.ScanRecord) {
 	c.cache[page] = elem
 }
 func (c *LRUCache) PrintCachePages() {
-	fmt.Print("Keširane stranice: ")
+	fmt.Print("Cache pages: ")
 	for e := c.order.Front(); e != nil; e = e.Next() {
 		entry := e.Value.(cacheEntry)
 		fmt.Printf("%d ", entry.page)

@@ -58,7 +58,7 @@ func (hll *HLL) emptyCount() int {
 func NewHLL(p uint8, key string) *HLL {
 	for {
 		if p < HLL_MIN_PRECISION || p > HLL_MAX_PRECISION {
-			fmt.Println("P mora biti izmedju 4 i 16!")
+			fmt.Println("Precision must be between 4 and 16. Please enter a valid precision:")
 		} else {
 			break
 		}
@@ -176,7 +176,7 @@ func DeserializeHLL(data []byte) (*HLL, error) {
 		Hf:  HashWithSeed{Seed: seed},
 	}
 	if uint64(len(hll.Reg)) != hll.M {
-		return nil, errors.New("nevalidna duzina registra")
+		return nil, errors.New("[Error] Invalid register length")
 	}
 
 	return hll, nil
