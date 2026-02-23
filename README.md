@@ -36,7 +36,7 @@ The following represents the core CLI-based interaction with the storage engine:
 ### Installation
 1. **Clone the repository:**
    ```bash
-   git clone [[https://github.com/bane-31/NASP-Project.git](https://github.com/bane-31/NASP-Project.git)](https://github.com/nikolasa004/NASP-projekat.git)
+   git clone https://github.com/nikolasa004/NASP-projekat.git
    cd NASP-Project
    ```
 2. **Setup dependencies:**
