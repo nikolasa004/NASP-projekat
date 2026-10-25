@@ -30,14 +30,14 @@ The following represents the core CLI-based interaction with the storage engine:
 ## ⚙️ Prerequisites, Installation, and Running
 
 ### Prerequisites
-- **Go** (version 1.18 or higher)
+- **Go** (version 1.23.2 or higher)
 - **Git**
 
 ### Installation
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/nikolasa004/NASP-projekat.git
-   cd NASP-Project
+   cd NASP-projekat/Project
    ```
 2. **Setup dependencies:**
    ```bash
@@ -92,7 +92,7 @@ Project/
 
 The engine follows a **modular, layered architecture** to ensure reliability and performance:
 
-1. **Write Path:** Every modification is first recorded in the **Write-Ahead Log (WAL)** for durability. It is then inserted into the active **Memtable**. We support concurrent Memtables: one remains writable while others are being flushed to disk.
+1. **Write Path:** Every modification is first recorded in the **Write-Ahead Log (WAL)** for durability. It is then inserted into the active **Memtable**. We support multiple Memtables, rotating the active table and flushing filled tables to disk as needed.
 2. **Read Path:** A strict lookup hierarchy is followed: **Memtable** → **LRU Cache** → **SSTables** (from Level 0 downwards).
 3. **Data Integrity:** Every SSTable is accompanied by a **Merkle Tree**, allowing for efficient verification of data blocks and detection of silent corruption.
 4. **Design Patterns:** We utilize the **Strategy Pattern** for Memtable implementations and a **Block Manager** to abstract complex disk I/O through paged memory.
@@ -126,8 +126,8 @@ Unlike many engines that offer a single structure, **Go-LSM** supports **SkipLis
 - **HashMaps** offer $O(1)$ lookup performance for specific workloads.
 
 ### **2. Sophisticated LSM Compaction**
-The engine manages the accumulation of disk files via background compaction:
-- **Size-Tiered:** Merges files of similar sizes to reduce write latency.
+The engine manages the accumulation of disk files by running compaction when configured thresholds are reached:
+- **Size-Tiered:** Compacts groups of SSTables when the number of files on a level reaches the configured limit.
 - **Leveled:** Maintains a strict hierarchy of levels to bound the number of files checked during reads, optimizing for retrieval speed.
 
 ### **3. Probabilistic Analytics Suite**
@@ -144,6 +144,25 @@ The engine provides high-level **Scanners** for **Range Queries** and **Prefix S
 The **Block Manager** handles the low-level serialization of data into fixed-size pages. It uses a **Buffer Pool** to ensure that data is read and written in a disk-friendly manner, significantly improving the performance of the underlying SSTable and WAL access.
 
 ### **6. Fault Tolerance & Recovery**
-Our **Write-Ahead Log (WAL)** implementation uses **Segmented Logging**. This ensures that even after a system crash, the engine can replay segments to reconstruct the Memtable state perfectly, ensuring **durability** and **consistency**.
+Our **Write-Ahead Log (WAL)** implementation uses **Segmented Logging**. After a restart, the engine can replay valid WAL records to reconstruct the in-memory state, supporting durability and recovery.
+
+---
+
+## 🔍 Storage Engine Internals
+
+### **1. Binary WAL Records and Recovery**
+Before a `PUT` or `DELETE` modifies the Memtable, the operation is serialized and written to the WAL. Records contain metadata such as a timestamp, key and value lengths, and a **tombstone** flag for deletions. They also include a **CRC32 checksum** that is checked when records are read; records that fail this check are skipped. The WAL uses fixed-size blocks inside segments, with **record fragmentation** for entries that cannot fit into a single block. On startup, the engine uses the available WAL segments to reconstruct recent records. As Memtables are flushed, older log segments can be removed when they are no longer needed for recovery.
+
+### **2. SSTable Organization and Lookups**
+When a Memtable is flushed, its records are written into sorted, disk-based **SSTables**. The engine supports both **single-file** and **multi-file** layouts, with a **Table of Contents (TOC)** identifying their components. A lookup first checks the **Bloom Filter** to avoid searching tables that cannot contain the key. For a possible match, the **Summary** narrows down the relevant part of the **Index**, which points to the record in the **Data** section. Each SSTable also includes a **Merkle Tree** for data integrity checks. The engine can optionally use dictionary-based key compression.
+
+### **3. LSM Levels and Compaction**
+SSTables are organized into levels, and their accumulation is managed through either **Size-Tiered** or **Leveled** compaction, depending on the JSON configuration. The implementation checks the number of SSTables on a level and triggers merging when the configured threshold is reached. Compaction combines records into new SSTables on subsequent levels, reducing the number of separate files that need to be considered during reads.
+
+### **4. Caching and Block-Level I/O**
+The **LRU Cache** keeps recently accessed key-value records available in memory, reducing repeated SSTable lookups. Separately, the **Block Manager** operates on fixed-size disk blocks and uses a **Buffer Pool** to reuse blocks that have already been read. These are two different layers of caching: one stores logical records, while the other helps with lower-level disk access.
+
+### **5. Scanners, Iterators, and Pagination**
+The CLI supports both **Prefix Scans** and **Range Scans**, including their iterative variants. Scanning uses iterators over **Memtables** and **SSTables** to traverse matching records from different storage layers. Results can be presented in pages, while a dedicated **Scanner Cache** keeps recently visited pages for faster navigation. This makes it possible to explore a selected portion of the key space without printing every stored record at once.
 
 ---
